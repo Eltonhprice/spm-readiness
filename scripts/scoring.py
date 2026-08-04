@@ -9,9 +9,9 @@ WEIGHTS = {
 }
 
 _VOLUME_100 = {"demand": 50, "ppm": 20, "resource": 10, "financial": 10,
-               "agile": 50, "apm": 10, "innovation": 5}
+               "agile": 50, "apm": 10, "innovation": 5, "csdm": 500}
 _VOLUME_60  = {"demand": 10, "ppm": 5,  "resource": 5,  "financial": 3,
-               "agile": 10, "apm": 3,   "innovation": 2}
+               "agile": 10, "apm": 3,   "innovation": 2, "csdm": 50}
 
 
 def rag(score):
@@ -48,7 +48,7 @@ def score_all(metrics):
     mods = metrics.get("modules", {})
     gov  = metrics.get("governance", {})
     results = {}
-    for mod_key in ["demand", "ppm", "resource", "financial", "agile", "apm", "innovation"]:
+    for mod_key in ["demand", "ppm", "resource", "financial", "agile", "apm", "innovation", "csdm"]:
         mod = mods.get(mod_key, {})
         dims = _score_module(mod_key, mod, gov)
         ms   = module_score(dims)
@@ -92,6 +92,13 @@ def _activation(mod_key, mod):
 
 
 def _data_volume(mod_key, mod):
+    if mod_key == "csdm":
+        total = mod.get("total_ci") or 0
+        if not total:
+            return None
+        if total >= _VOLUME_100["csdm"]: return 100
+        if total >= _VOLUME_60["csdm"]:  return 60
+        return 20
     total_key = "total" if mod_key != "agile" else "total_stories"
     total = mod.get(total_key) or 0
     if not total:
@@ -135,6 +142,12 @@ def _data_completeness(mod_key, mod, gov):
     if mod_key == "innovation":
         vals = [_inv(mod.get("no_owner_pct"))]
         return _avg_non_none(vals)
+    if mod_key == "csdm":
+        vals = [_v(mod.get("ci_with_operational_status_pct")),
+                _v(mod.get("ci_with_owner_pct")),
+                _v(mod.get("ci_with_support_group_pct")),
+                _v(mod.get("ci_with_environment_pct"))]
+        return _avg_non_none(vals)
     return None
 
 
@@ -170,6 +183,10 @@ def _process_adoption(mod_key, mod, gov):
     if mod_key == "innovation":
         converted = mod.get("linked_to_demand_or_project_pct") or 0
         return _v(converted)
+    if mod_key == "csdm":
+        vals = [_v(mod.get("ci_discovered_pct")),
+                _v(mod.get("services_with_owner_pct"))]
+        return _avg_non_none(vals)
     return None
 
 
@@ -188,6 +205,14 @@ def _integration(mod_key, mod):
         return _v(mod.get("with_cmdb_link_pct"))
     if mod_key == "innovation":
         return _v(mod.get("linked_to_demand_or_project_pct"))
+    if mod_key == "csdm":
+        # ratio of total relationships to CIs — normalise: >=2 rels/CI = 100, >=0.5 = 60, else 20
+        total_ci   = mod.get("total_ci") or 0
+        total_rels = mod.get("total_relationships") or 0
+        if not total_ci:
+            return None
+        ratio = total_rels / total_ci
+        return 100 if ratio >= 2.0 else (60 if ratio >= 0.5 else 20)
     return None
 
 

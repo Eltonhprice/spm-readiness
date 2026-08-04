@@ -269,6 +269,54 @@ def generate_mock(out_dir):
              "active": "true", "owner": _uid(), "sys_created_on": _date(180)}
             for i in range(1, 4)])
 
+    # CSDM / CMDB
+    ci_classes = [
+        "cmdb_ci_server", "cmdb_ci_appl", "cmdb_ci_computer", "cmdb_ci_ip_switch",
+        "cmdb_ci_linux_server", "cmdb_ci_win_server", "cmdb_ci_database",
+    ]
+    discovery_sources = ["ServiceNow Discovery", "SCCM", "AWS Service", "Azure Resource", ""]
+    cis = [
+        {
+            "sys_id":             _uid(),
+            "name":               f"CI-{i:04d}",
+            "sys_class_name":     random.choice(ci_classes),
+            "operational_status": str(random.randint(1, 6)) if i % 8 != 0 else "",
+            "managed_by":         _uid() if i % 5 != 0 else "",
+            "owned_by":           _uid() if i % 4 != 0 else "",
+            "support_group":      _uid() if i % 3 != 0 else "",
+            "environment":        random.choice(["production", "development", "test", ""]) if i % 6 != 0 else "",
+            "discovery_source":   random.choice(discovery_sources) if random.random() < 0.60 else "",
+            "install_status":     "1",
+            "sys_updated_on":     _date(random.randint(1, 180)),
+        }
+        for i in range(1, 151)
+    ]
+    _write(out_dir, "csdm", "cmdb_ci", cis)
+
+    svc_classifications = [
+        "Business Service", "Business Service", "Business Service",
+        "Technical Service", "Technical Service",
+    ]
+    services = [
+        {
+            "sys_id":                  _uid(),
+            "name":                    f"Service {i}",
+            "sys_class_name":          "cmdb_ci_service",
+            "operational_status":      "1",
+            "service_classification":  random.choice(svc_classifications),
+            "managed_by_group":        _uid() if i % 4 != 0 else "",
+            "owned_by":                _uid() if i % 3 != 0 else "",
+            "portfolio_status":        random.choice(["pipeline", "catalog", "retired", ""]),
+            "sys_updated_on":          _date(random.randint(1, 120)),
+        }
+        for i in range(1, 21)
+    ]
+    _write(out_dir, "csdm", "cmdb_ci_service", services)
+
+    # cmdb_rel_ci — collector outputs a single JSON object; wrap as 1-element array
+    _write(out_dir, "csdm", "cmdb_rel_ci",
+           [{"total_relationships": 180, "sampled_parent_count": 90}])
+
     # Sidecars
     _write_sidecar(out_dir, "_sidecar_spm_adoption", {
         "plugins": {
@@ -297,12 +345,12 @@ def generate_mock(out_dir):
     })
 
     print(f"Mock data written to: {out_dir}")
-    print(f"  Demands: 140 | Projects: 60 | Stories: 200 | Apps: 45 | Ideas: 25")
+    print(f"  Demands: 140 | Projects: 60 | Stories: 200 | Apps: 45 | Ideas: 25 | CIs: 150 | Services: 20")
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Generate mock SPM input data")
-    ap.add_argument("--out", default="spm-inputs/mock", help="Output directory")
+    ap.add_argument("--out", default="engagement/mock", help="Output directory")
     args = ap.parse_args(argv)
     generate_mock(args.out)
 

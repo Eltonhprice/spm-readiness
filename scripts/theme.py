@@ -20,9 +20,10 @@ RAG_BG = {
 }
 
 
-def render_header(title, badge="SPM Readiness · AS-IS", client="", date=""):
+def render_header(title, badge="SPM Readiness · AS-IS", client="", date="", mode="rde"):
     date_str = date or _date.today().isoformat()
     client_str = f" &nbsp;·&nbsp; {client}" if client else ""
+    mode_label = mode.upper()
     return (
         f'<div style="border-left:6px solid {PURPLE};background:{LIGHT_PURPLE};'
         f'padding:16px 20px;margin-bottom:24px;border-radius:4px;">\n'
@@ -32,17 +33,18 @@ def render_header(title, badge="SPM Readiness · AS-IS", client="", date=""):
         f'color:{PURPLE};text-transform:uppercase;margin-bottom:4px;">{badge}</div>\n'
         f'<div style="font-size:22px;font-weight:800;color:#1a1a1a;">{title}</div>\n'
         f'<div style="font-size:12px;color:#666;margin-top:4px;">'
-        f'{date_str}{client_str} &nbsp;·&nbsp; Accenture SAGE</div>\n'
+        f'{date_str}{client_str} &nbsp;·&nbsp; Accenture SAGE &nbsp;·&nbsp; {mode_label}</div>\n'
         f'</div>\n</div>\n</div>\n'
     )
 
 
-def render_footer(date=""):
+def render_footer(date="", mode="rde"):
     date_str = date or _date.today().isoformat()
+    mode_label = mode.upper()
     return (
         f'\n<div style="border-top:3px solid {PURPLE};margin-top:40px;'
         f'padding-top:12px;font-size:11px;color:#999;text-align:center;">\n'
-        f'SAGE · SPM Readiness Assessment · AS-IS Profile · {date_str} · Accenture\n'
+        f'SAGE · {mode_label} · SPM Readiness Assessment · AS-IS Profile · {date_str} · Accenture\n'
         f'</div>\n'
     )
 

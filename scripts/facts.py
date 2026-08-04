@@ -22,6 +22,7 @@ def write_csvs(metrics, data_dir):
     _write_agile_adoption(mods.get("agile", {}), data_dir)
     _write_apm_coverage(mods.get("apm", {}), data_dir)
     _write_innovation_pipeline(mods.get("innovation", {}), data_dir)
+    _write_csdm_summary(mods.get("csdm", {}), data_dir)
     _write_readiness_scorecard(metrics.get("coverage_matrix", []), data_dir)
 
 
@@ -140,6 +141,26 @@ def _write_innovation_pipeline(d, data_dir):
         w.writerow({"metric": metric, "value": val})
     for state, count in (d.get("by_state") or {}).items():
         w.writerow({"metric": f"state:{state}", "value": count})
+    f.close()
+
+
+def _write_csdm_summary(d, data_dir):
+    f, w = _csv_writer(data_dir, "csdm_summary.csv", ["metric", "value"])
+    for metric, val in [
+        ("total_ci", d.get("total_ci")),
+        ("total_services", d.get("total_services")),
+        ("business_service_count", d.get("business_service_count")),
+        ("technical_service_count", d.get("technical_service_count")),
+        ("total_relationships", d.get("total_relationships")),
+        ("ci_with_operational_status_pct", d.get("ci_with_operational_status_pct")),
+        ("ci_with_owner_pct", d.get("ci_with_owner_pct")),
+        ("ci_with_managed_by_pct", d.get("ci_with_managed_by_pct")),
+        ("ci_with_support_group_pct", d.get("ci_with_support_group_pct")),
+        ("ci_with_environment_pct", d.get("ci_with_environment_pct")),
+        ("ci_discovered_pct", d.get("ci_discovered_pct")),
+        ("services_with_owner_pct", d.get("services_with_owner_pct")),
+    ]:
+        w.writerow({"metric": metric, "value": val})
     f.close()
 
 

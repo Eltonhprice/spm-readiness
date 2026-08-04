@@ -3,12 +3,12 @@ import argparse
 import os
 
 _DEFAULT_INPUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                               "spm-inputs", "mock")
+                               "engagement", "mock")
 _DEFAULT_OUT   = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                                "spm-outputs", "mock")
 
 
-def run(input_dir, out_dir):
+def run(input_dir, out_dir, mode="rde"):
     from scripts.load     import load_all
     from scripts.metrics  import compute_metrics, _coverage_matrix
     from scripts.facts    import write_facts, write_csvs
@@ -16,6 +16,7 @@ def run(input_dir, out_dir):
     from scripts.findings import generate_findings
     from scripts.profile  import write_profile
     from scripts.html_deck import write_deck
+    from scripts.pptx_deck import write_pptx
 
     client = os.path.basename(os.path.normpath(out_dir))
     os.makedirs(out_dir, exist_ok=True)
@@ -52,12 +53,15 @@ def run(input_dir, out_dir):
     print(f"      {len(findings)} findings generated.")
 
     print("[6/7] Writing markdown profile ...")
-    profile_path = write_profile(metrics, scores, findings, out_dir)
+    profile_path = write_profile(metrics, scores, findings, out_dir, mode=mode)
     print(f"      Profile -> {profile_path}")
 
     print("[7/7] Rendering HTML leadership deck ...")
-    deck_path = write_deck(metrics, scores, findings, out_dir)
-    print(f"      Deck -> {deck_path}")
+    deck_path = write_deck(metrics, scores, findings, out_dir, mode=mode)
+    print(f"      HTML  -> {deck_path}")
+
+    pptx_path = write_pptx(metrics, scores, findings, out_dir, mode=mode)
+    print(f"      PPTX  -> {pptx_path}")
 
     print("\nDone.")
     print(f"  Overall Score : {overall}%")
@@ -66,15 +70,18 @@ def run(input_dir, out_dir):
         print(f"  Weakest Module: {worst[0]} -- {worst[1].get('module_score')}% [{worst[1].get('rag')}]")
         print(f"  Top Finding   : {findings[0]['id']} -- {findings[0]['observation']}")
     print(f"\n  Profile : {profile_path}")
-    print(f"  Deck    : {deck_path}")
+    print(f"  HTML    : {deck_path}")
+    print(f"  PPTX    : {pptx_path}")
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Run SPM readiness analysis")
-    ap.add_argument("--input", default=_DEFAULT_INPUT, help="Input directory (spm-inputs/<client>)")
+    ap.add_argument("--input", default=_DEFAULT_INPUT, help="Input directory (engagement/<client>)")
     ap.add_argument("--out",   default=_DEFAULT_OUT,   help="Output directory (spm-outputs/<client>)")
+    ap.add_argument("--mode",  default="rde", choices=["rde", "fde"],
+                    help="Delivery mode: rde (facts-only, default) or fde (focus areas on slide 6)")
     args = ap.parse_args(argv)
-    run(args.input, args.out)
+    run(args.input, args.out, mode=args.mode)
 
 
 if __name__ == "__main__":

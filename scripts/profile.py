@@ -12,6 +12,7 @@ _MODULE_LABELS = {
     "agile":      "Agile Development",
     "apm":        "Application Portfolio Management",
     "innovation": "Innovation Management",
+    "csdm":       "CSDM/CMDB Health",
 }
 
 _DIMS = ["activation", "data_volume", "data_completeness", "process_adoption", "integration"]
@@ -24,7 +25,7 @@ _DIM_LABELS = {
 }
 
 
-def write_profile(metrics, scores, findings, out_dir):
+def write_profile(metrics, scores, findings, out_dir, mode="rde"):
     os.makedirs(out_dir, exist_ok=True)
     ctx     = metrics.get("_context", {})
     client  = ctx.get("client", "")
@@ -34,10 +35,11 @@ def write_profile(metrics, scores, findings, out_dir):
 
     lines = []
     lines.append(render_header(
-        f"AS-IS SPM Readiness Profile",
-        badge="SPM Readiness · AS-IS",
+        "AS-IS SPM Readiness Profile",
+        badge=f"SPM Readiness · AS-IS · {mode.upper()}",
         client=client.upper() if client else "",
         date=date,
+        mode=mode,
     ))
     lines.append(_how_generated())
     lines.append(_executive_summary(metrics, scores, overall))
@@ -51,7 +53,7 @@ def write_profile(metrics, scores, findings, out_dir):
     lines.append(_coverage_matrix_section(metrics))
     lines.append(_key_observations_placeholder())
     lines.append(_findings_table(findings))
-    lines.append(render_footer(date=date))
+    lines.append(render_footer(date=date, mode=mode))
     lines.append(_appendix_collector_coverage(metrics))
 
     path = os.path.join(out_dir, "as-is-spm-readiness-profile.md")
@@ -280,6 +282,9 @@ def _appendix_collector_coverage(metrics):
         ("pm_scoring_criterion",   "scoring",    True),
         ("pm_portfolio_score",     "scoring",    True),
         ("pa_scorecard",           "pa",         True),
+        ("cmdb_ci",                "csdm",       mods.get("csdm", {}).get("total_ci", 0) > 0),
+        ("cmdb_ci_service",        "csdm",       mods.get("csdm", {}).get("total_services", 0) > 0),
+        ("cmdb_rel_ci",            "csdm",       mods.get("csdm", {}).get("total_relationships", 0) > 0),
     ]
     for table, domain, present in table_map:
         status = "collected" if present else "not_collected"

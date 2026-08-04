@@ -9,9 +9,9 @@ dist/
 build/
 
 # Client data — never committed
-spm-inputs/*/
+engagement/*/
 spm-outputs/*/
-!spm-inputs/mock/
+!engagement/mock/
 !spm-outputs/mock/
 
 # OS

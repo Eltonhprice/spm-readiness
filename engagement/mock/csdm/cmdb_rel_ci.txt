@@ -1,0 +1,2 @@
+[{"total_relationships": 180, "sampled_parent_count": 90}]
+// SPM collector: table=cmdb_rel_ci chunk=0 rows=1 total=1 status=COMPLETE

@@ -32,6 +32,7 @@ def compute_metrics(buckets, client, input_dir):
         "agile":      _agile(buckets, plugins),
         "apm":        _apm(buckets, plugins),
         "innovation": _innovation(buckets, plugins),
+        "csdm":       _csdm(buckets),
     }
 
     return {
@@ -336,6 +337,72 @@ def _innovation(buckets, plugins):
     }
 
 
+def _csdm(buckets):
+    cis      = buckets.get("cmdb_ci") or []
+    services = buckets.get("cmdb_ci_service") or []
+    # cmdb_rel_ci comes in as a sidecar-style dict via the collector output
+    rel_raw  = buckets.get("cmdb_rel_ci") or []
+    # The collector prints a JSON object, not array — handle both
+    if isinstance(rel_raw, list) and len(rel_raw) == 1 and isinstance(rel_raw[0], dict):
+        rel_data = rel_raw[0]
+    elif isinstance(rel_raw, dict):
+        rel_data = rel_raw
+    else:
+        rel_data = {}
+
+    n   = len(cis)
+    nsv = len(services)
+
+    def _has(r, field):
+        v = r.get(field)
+        return bool(v and str(v).strip() not in ("", "0", "null", "None"))
+
+    # Field completeness rates
+    with_op_status   = sum(1 for r in cis if _has(r, "operational_status")) if n else 0
+    with_owner       = sum(1 for r in cis if _has(r, "owned_by")) if n else 0
+    with_managed_by  = sum(1 for r in cis if _has(r, "managed_by")) if n else 0
+    with_support_grp = sum(1 for r in cis if _has(r, "support_group")) if n else 0
+    with_environment = sum(1 for r in cis if _has(r, "environment")) if n else 0
+
+    # Discovery source — anything other than blank/"manual"/"Manual Input" counts as automated
+    discovered = sum(1 for r in cis
+                     if _has(r, "discovery_source") and
+                     r.get("discovery_source", "").lower() not in ("manual", "manual input", "")) if n else 0
+
+    # Service classification breakdown
+    biz_services  = sum(1 for s in services
+                        if (s.get("service_classification") or "").lower() in
+                           ("business service", "businessservice")) if nsv else 0
+    tech_services = sum(1 for s in services
+                        if (s.get("service_classification") or "").lower() in
+                           ("technical service", "technicalservice")) if nsv else 0
+    svc_with_owner = sum(1 for s in services if _has(s, "owned_by")) if nsv else 0
+
+    total_rels    = rel_data.get("total_relationships") or 0
+    sampled_parents = rel_data.get("sampled_parent_count") or 0
+
+    return {
+        "total_ci":                   n,
+        "total_services":             nsv,
+        "business_service_count":     biz_services,
+        "technical_service_count":    tech_services,
+        "total_relationships":        total_rels,
+        "ci_with_operational_status_pct": st.pct(with_op_status, n),
+        "ci_with_owner_pct":          st.pct(with_owner, n),
+        "ci_with_managed_by_pct":     st.pct(with_managed_by, n),
+        "ci_with_support_group_pct":  st.pct(with_support_grp, n),
+        "ci_with_environment_pct":    st.pct(with_environment, n),
+        "ci_discovered_pct":          st.pct(discovered, n),
+        "services_with_owner_pct":    st.pct(svc_with_owner, nsv),
+        "plugin_active":              n > 0,
+        "footprint_status": {
+            "ci_total":       st.measured(n) if n else st.not_collected("cmdb_ci not collected"),
+            "services_total": st.measured(nsv) if nsv else st.not_collected("cmdb_ci_service not collected"),
+            "relationships":  st.measured(total_rels) if total_rels else st.not_collected("cmdb_rel_ci not collected"),
+        },
+    }
+
+
 def _governance(buckets):
     ts_periods  = buckets.get("timesheet_period") or []
     ts_entries  = buckets.get("timesheet_entry") or []
@@ -401,6 +468,7 @@ _MODULE_LABELS = {
     "agile":      "Agile Development",
     "apm":        "Application Portfolio",
     "innovation": "Innovation Management",
+    "csdm":       "CSDM/CMDB Health",
 }
 
 

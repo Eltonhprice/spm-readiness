@@ -1,0 +1,7 @@
+{
+  "mcp_endpoint": "https://servicenow-mcp.victoriouspebble-047683d1.westus2.azurecontainerapps.io",
+  "industry": "",
+  "personas_enabled": true,
+  "skills_path": "~/.claude/skills",
+  "python_discovery": "auto"
+}

@@ -15,6 +15,7 @@ _MODULE_LABELS = {
     "agile":      "Agile",
     "apm":        "APM",
     "innovation": "Innovation",
+    "csdm":       "CSDM/CMDB",
 }
 
 _DIMS = ["activation", "data_volume", "data_completeness", "process_adoption", "integration"]
@@ -31,16 +32,16 @@ _SLIDE_BG = "#ffffff"
 _DECK_BG  = "#f4f4f6"
 
 
-def write_deck(metrics, scores, findings, out_dir):
+def write_deck(metrics, scores, findings, out_dir, mode="rde"):
     os.makedirs(out_dir, exist_ok=True)
-    html = render_deck(metrics, scores, findings)
+    html = render_deck(metrics, scores, findings, mode=mode)
     path = os.path.join(out_dir, "spm-leadership-deck.html")
     with open(path, "w", encoding="utf-8") as f:
         f.write(html)
     return path
 
 
-def render_deck(metrics, scores, findings):
+def render_deck(metrics, scores, findings, mode="rde"):
     ctx     = metrics.get("_context", {})
     client  = ctx.get("client", "Client").upper()
     date    = ctx.get("generated_on", "")
@@ -48,12 +49,12 @@ def render_deck(metrics, scores, findings):
     overall    = _overall_score(mod_scores)
 
     slides = [
-        _slide_cover(client, date, overall),
+        _slide_cover(client, date, overall, mode=mode),
         _slide_radar(scores, overall),
         _slide_scorecard(scores),
         _slide_governance(metrics),
         _slide_findings(findings),
-        _slide_next_steps(),
+        _slide_next_steps(mode=mode, findings=findings),
     ]
     return _page_shell(slides, client, date)
 
@@ -131,20 +132,21 @@ document.addEventListener('keydown', function(e) {{
 </html>"""
 
 
-def _slide_cover(client, date, overall):
+def _slide_cover(client, date, overall, mode="rde"):
     score_str = f"{overall}%" if overall is not None else "—"
     rag_color = RAG_COLORS.get(
         "green" if (overall or 0) >= 70 else "amber" if (overall or 0) >= 40 else "red",
         "#9ca3af"
     )
+    mode_label = mode.upper()
     return f"""
-<div class="label">Accenture SAGE · SPM Readiness Assessment · AS-IS</div>
+<div class="label">Accenture SAGE · {mode_label} · SPM Readiness Assessment · AS-IS</div>
 <h1 style="margin:12px 0 4px;">{client}</h1>
 <div style="font-size:13px;color:#888;margin-bottom:40px;">{date}</div>
 <div class="label">Overall SPM Readiness Score</div>
 <div class="score-big" style="color:{rag_color};">{score_str}</div>
 <div style="margin-top:24px;font-size:13px;color:#666;">
-  Score is a weighted average of 7 SPM modules × 5 readiness dimensions.<br>
+  Score is a weighted average of 8 SPM modules × 5 readiness dimensions.<br>
   Green &ge;70% &nbsp;&middot;&nbsp; Amber 40&ndash;69% &nbsp;&middot;&nbsp; Red &lt;40%
 </div>
 <div class="btn-row">
@@ -321,7 +323,9 @@ def _slide_findings(findings):
 </div>"""
 
 
-def _slide_next_steps():
+def _slide_next_steps(mode="rde", findings=None):
+    if mode == "fde" and findings:
+        return _slide_next_steps_fde(findings)
     return f"""
 <h2>Recommended Next Steps</h2>
 <div style="background:#f9f5ff;border-left:4px solid {PURPLE};padding:16px 20px;border-radius:4px;margin-bottom:24px;">
@@ -343,10 +347,46 @@ def _slide_next_steps():
 </div>"""
 
 
+def _slide_next_steps_fde(findings):
+    priority = [f for f in findings if f.get("rag") in ("red", "amber")][:5]
+    if not priority:
+        priority = findings[:5]
+    rows = ""
+    for i, f in enumerate(priority, 1):
+        r   = f.get("rag", "not_collected")
+        col = RAG_COLORS.get(r, "#9ca3af")
+        mod = f.get("module_label", f.get("module", ""))
+        obs = f.get("observation", "")
+        rows += (
+            f"<tr>"
+            f"<td>{i}</td>"
+            f'<td>{obs}</td>'
+            f"<td>{mod}</td>"
+            f'<td><span class="badge" style="background:{col};">{r.upper()}</span></td>'
+            f"</tr>"
+        )
+    return f"""
+<h2>Priority Focus Areas</h2>
+<div style="background:#f9f5ff;border-left:4px solid {PURPLE};padding:16px 20px;border-radius:4px;margin-bottom:24px;">
+  <div style="font-size:12px;font-weight:700;color:{PURPLE};text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">FDE · Areas for Discussion</div>
+  <div style="color:#555;font-size:13px;">Derived from top-priority findings. Consultant to validate scope and sequencing with client.</div>
+</div>
+<table>
+  <thead><tr><th>#</th><th>Finding</th><th>Module</th><th>Priority</th></tr></thead>
+  <tbody>{rows}</tbody>
+</table>
+<div class="btn-row">
+  <button class="btn" onclick="goTo(4)">&larr; Back</button>
+  <span></span>
+</div>"""
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Render SPM leadership HTML deck from metrics.json")
     ap.add_argument("--metrics", required=True, help="Path to metrics.json")
     ap.add_argument("--out",     required=True, help="Output directory")
+    ap.add_argument("--mode",    default="rde", choices=["rde", "fde"],
+                    help="Delivery mode: rde (facts-only, default) or fde (focus areas on slide 6)")
     args = ap.parse_args(argv)
 
     with open(args.metrics, encoding="utf-8") as f:
@@ -362,7 +402,7 @@ def main(argv=None):
     metrics["coverage_matrix"] = enrich_coverage_matrix(metrics, scores)
     findings = generate_findings(metrics, scores)
 
-    path = write_deck(metrics, scores, findings, args.out)
+    path = write_deck(metrics, scores, findings, args.out, mode=args.mode)
     print(f"Deck written: {path}")
 
 

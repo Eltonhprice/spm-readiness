@@ -8,6 +8,7 @@ _MODULE_LABELS = {
     "agile":      "Agile Development",
     "apm":        "Application Portfolio Management",
     "innovation": "Innovation Management",
+    "csdm":       "CSDM/CMDB Health",
 }
 
 _DIM_LABELS = {
@@ -40,6 +41,11 @@ _SIGNIFICANCE = {
     ("innovation", "activation"):        "Innovation management module is not active — idea pipeline is not tracked in platform.",
     ("innovation", "data_volume"):       "Very few innovation records indicate the module is not being used.",
     ("innovation", "integration"):       "Ideas not linked to demands or projects cannot be tracked through to delivery.",
+    ("csdm", "activation"):        "CMDB has no configuration items — asset and service topology data is absent from the platform.",
+    ("csdm", "data_volume"):       "Low CI count limits the value of CMDB-dependent capabilities including APM, impact analysis, and service mapping.",
+    ("csdm", "data_completeness"): "Missing required CI fields (owner, status, environment) reduce reliability of CMDB-driven reporting.",
+    ("csdm", "process_adoption"):  "Low automated discovery rate indicates CIs are manually maintained, increasing staleness risk.",
+    ("csdm", "integration"):       "Low CI relationship density means service dependency mapping and impact analysis cannot function reliably.",
 }
 
 
@@ -47,7 +53,7 @@ def generate_findings(metrics, scores):
     findings = []
     mods = metrics.get("modules", {})
 
-    for mod_key in ["demand", "ppm", "resource", "financial", "agile", "apm", "innovation"]:
+    for mod_key in ["demand", "ppm", "resource", "financial", "agile", "apm", "innovation", "csdm"]:
         mod_scores = scores.get(mod_key, {})
         mod_data   = mods.get(mod_key, {})
 
@@ -88,7 +94,12 @@ def _observation(mod_key, dim, score, mod_data):
     if dim == "activation":
         return f"{_MODULE_LABELS[mod_key]}: plugin is inactive (activation score: {score}%)."
     if dim == "data_volume":
-        total_key = "total_stories" if mod_key == "agile" else "total"
+        if mod_key == "agile":
+            total_key = "total_stories"
+        elif mod_key == "csdm":
+            total_key = "total_ci"
+        else:
+            total_key = "total"
         total = mod_data.get(total_key) or 0
         return f"{_MODULE_LABELS[mod_key]}: {total} records found (data volume score: {score}%)."
     if dim == "data_completeness":
