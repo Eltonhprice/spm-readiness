@@ -1,0 +1,2 @@
+{"project_completeness_pct": 61, "demand_priority_set_pct": 74, "resource_plan_named_pct": 83, "projects_stale_90d": 7, "projects_stale_90d_pct": 12, "demands_stale_90d": 11, "demands_stale_90d_pct": 8}
+// SPM sidecar: name=_sidecar_portfolio_health status=COMPLETE

@@ -1,0 +1,2 @@
+[{"sys_id": "sw5ejr91qupwckh3v10m1v395zdhz6m9", "name": "IT", "active": "true", "parent": ""}, {"sys_id": "bjudl3af6kkfedlbgkbuoc1r601ejt1w", "name": "Business", "active": "true", "parent": ""}, {"sys_id": "t805qtdcjs924w7w8twt2i9owp7nl6dm", "name": "Security", "active": "true", "parent": ""}]
+// SPM collector: table=pm_demand_category chunk=0 rows=3 total=3 status=COMPLETE

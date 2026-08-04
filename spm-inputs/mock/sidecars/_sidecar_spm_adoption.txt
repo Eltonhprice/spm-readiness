@@ -1,0 +1,2 @@
+{"plugins": {"com.snc.sdlc.ppm_core": true, "com.snc.rm": true, "com.snc.financial_mgmt": true, "com.snc.agile": true, "com.snc.apm": false, "com.snc.innovation_mgmt": false}, "roles": {"portfolio_manager": 4, "project_manager": 12, "resource_manager": 3, "financial_analyst": 1, "it_demand_manager": 2}, "spm_workspace_active": true, "active_users_90d": {"pm_demand": 18, "pm_project": 24, "pm_resource_plan": 6, "rm_story": 15, "apm_appl_now": null}}
+// SPM sidecar: name=_sidecar_spm_adoption status=COMPLETE
