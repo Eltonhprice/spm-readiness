@@ -720,6 +720,334 @@ def _slide_next_steps(prs, mode, findings, date):
     return sl
 
 
+def _slide_scorecard_explainer(prs, date, mode):
+    sl = _blank(prs)
+    _header_band(sl, "How to Read the Scorecard",
+                 "Scoring framework — thresholds, dimension weights, and not-collected handling")
+
+    # ── Left: RAG thresholds ──────────────────────────────────────────────────
+    _txbox(sl, Inches(0.3), Inches(1.38), Inches(4.0), Inches(0.3),
+           "RAG THRESHOLDS", size=9, bold=True, color=GREY_TEXT)
+    thresholds = [
+        ("Green",         "≥ 70%",   RAG_RGB["green"]),
+        ("Amber",         "40 – 69%", RAG_RGB["amber"]),
+        ("Red",           "< 40%",   RAG_RGB["red"]),
+        ("Grey (—)",      "Plugin not active or data not collected",
+         RGBColor(0x9C, 0xA3, 0xAF)),
+    ]
+    for i, (label, meaning, col) in enumerate(thresholds):
+        y = Inches(1.75) + i * Inches(0.72)
+        _rect(sl, Inches(0.3), y, Inches(1.5), Inches(0.52), fill=col)
+        _txbox(sl, Inches(0.35), y + Inches(0.12), Inches(1.4), Inches(0.28),
+               label, size=11, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+        _rect(sl, Inches(1.85), y, Inches(4.3), Inches(0.52), fill=GREY_LT)
+        _txbox(sl, Inches(1.95), y + Inches(0.12), Inches(4.1), Inches(0.28),
+               meaning, size=10, color=DARK)
+
+    # ── Centre: dimension weights ─────────────────────────────────────────────
+    _txbox(sl, Inches(6.6), Inches(1.38), Inches(6.4), Inches(0.3),
+           "DIMENSION WEIGHTS", size=9, bold=True, color=GREY_TEXT)
+    dims = [
+        ("Activation",        "20%", "Is the module plugin active on the instance?"),
+        ("Data Volume",       "20%", "Are sufficient records present to assess the module?"),
+        ("Data Completeness", "25%", "Are key fields populated across records?"),
+        ("Process Adoption",  "25%", "Are governance mechanisms actively in use?"),
+        ("Integration",       "10%", "Are records linked across SPM modules?"),
+    ]
+    bar_max = Inches(3.0)
+    weights = [0.20, 0.20, 0.25, 0.25, 0.10]
+    for i, ((dim, pct, desc), w) in enumerate(zip(dims, weights)):
+        y = Inches(1.75) + i * Inches(0.72)
+        _rect(sl, Inches(6.6), y, Inches(6.4), Inches(0.52), fill=GREY_LT)
+        _txbox(sl, Inches(6.7), y + Inches(0.04), Inches(1.7), Inches(0.24),
+               dim, size=9, bold=True, color=DARK)
+        _txbox(sl, Inches(6.7), y + Inches(0.27), Inches(5.8), Inches(0.22),
+               desc, size=8, color=GREY_TEXT, italic=True)
+        # weight bar
+        _rect(sl, Inches(8.55), y + Inches(0.12), bar_max, Inches(0.28),
+              fill=RGBColor(0xE9, 0xE9, 0xEB))
+        _rect(sl, Inches(8.55), y + Inches(0.12), bar_max * (w / 0.25), Inches(0.28),
+              fill=PURPLE)
+        _txbox(sl, Inches(11.65), y + Inches(0.1), Inches(0.9), Inches(0.3),
+               pct, size=10, bold=True, color=PURPLE, align=PP_ALIGN.RIGHT)
+
+    # ── Bottom: formula note ──────────────────────────────────────────────────
+    _rect(sl, Inches(0.3), Inches(5.65), Inches(12.7), Inches(0.9), fill=PURPLE)
+    _txbox(sl, Inches(0.5), Inches(5.72), Inches(12.3), Inches(0.35),
+           "Formula: module score = weighted average of scored dimensions only. "
+           "Inactive modules (grey) are excluded from the denominator — they do not "
+           "pull the overall score down.",
+           size=10, color=WHITE)
+
+    _footer(sl, date, mode)
+    return sl
+
+
+def _slide_scoring_basis_explainer(prs, date, mode):
+    sl = _blank(prs)
+    _header_band(sl, "How Dimension Scores Are Derived",
+                 "Each dimension translates raw metrics into a 0–100 score using the rules below")
+
+    rules = [
+        ("Activation", "20%",
+         "100% if the module plugin is active on the instance.\n"
+         "Not collected (—) if the plugin is off or cannot be confirmed.\n"
+         "Exception: Demand requires at least one demand record, as it shares a plugin ID with PPM."),
+        ("Data Volume", "20%",
+         "100  if record count ≥ full threshold (e.g. 20+ projects, 50+ stories, 500+ CIs)\n"
+         " 60  if count ≥ partial threshold (e.g. 5+ projects, 10+ stories, 50+ CIs)\n"
+         " 20  if at least one record exists\n"
+         "Not collected if zero records."),
+        ("Data Completeness", "25%",
+         "Average of key field fill rates for the module — e.g. for PPM: "
+         "inverse of shell-project %, inverse of no-owner %, and project completeness %. "
+         "Each metric is normalised 0–100. Fields that are null (not collected) are excluded "
+         "from the average rather than treated as zero."),
+        ("Process Adoption", "25%",
+         "Governance signals: approval rates, status report frequency, timesheet entries, "
+         "completed sprints, or scoring model usage — depending on module. "
+         "Zero records in a governance table scores 0%, not not-collected, "
+         "because absence of process is a real finding."),
+        ("Integration", "10%",
+         "Linkage rate between this module's records and adjacent SPM modules — "
+         "e.g. projects grouped under programs, demands linked to projects, "
+         "applications linked to CMDB CIs, or CI relationship density (rels ÷ CIs)."),
+    ]
+
+    weights = [0.20, 0.20, 0.25, 0.25, 0.10]
+    row_h = Inches(0.96)
+    y0 = Inches(1.35)
+    for i, ((dim, pct, body), w) in enumerate(zip(rules, weights)):
+        y = y0 + i * (row_h + Inches(0.04))
+        bg = GREY_LT if i % 2 == 0 else WHITE
+        _rect(sl, Inches(0.25), y, Inches(12.8), row_h, fill=bg)
+        _rect(sl, Inches(0.25), y, Inches(0.18), row_h, fill=PURPLE)
+        # Dim name + weight
+        _txbox(sl, Inches(0.52), y + Inches(0.06), Inches(2.2), Inches(0.28),
+               dim, size=11, bold=True, color=DARK)
+        _txbox(sl, Inches(2.75), y + Inches(0.06), Inches(0.7), Inches(0.28),
+               pct, size=10, bold=True, color=PURPLE)
+        # Body text
+        _txbox(sl, Inches(0.52), y + Inches(0.38), Inches(12.2), Inches(0.54),
+               body, size=8, color=GREY_TEXT)
+
+    _footer(sl, date, mode)
+    return sl
+
+
+def _slide_appendix_divider(prs, date, mode):
+    sl = _blank(prs)
+    _rect(sl, 0, 0, W, H, fill=PURPLE)
+    _txbox(sl, Inches(1.0), Inches(2.8), Inches(11), Inches(1.2),
+           "APPENDIX", size=48, bold=True, color=WHITE)
+    _txbox(sl, Inches(1.0), Inches(4.1), Inches(11), Inches(0.5),
+           "Detailed Scoring Methodology & Calculation Examples",
+           size=18, color=RGBColor(0xE9, 0xD5, 0xFF))
+    # Footer without mode/date branding
+    _txbox(sl, Inches(0.4), H - Inches(0.4), Inches(12), Inches(0.3),
+           "Accenture SAGE  ·  SPM Readiness Assessment  ·  AS-IS Profile",
+           size=9, color=RGBColor(0xE9, 0xD5, 0xFF))
+    return sl
+
+
+def _slide_appendix_methodology(prs, date, mode):
+    sl = _blank(prs)
+    _header_band(sl, "Appendix A — Scoring Methodology",
+                 "Complete reference: formula, weights, thresholds, and not-collected rules")
+
+    # ── Section 1: Formula ────────────────────────────────────────────────────
+    _txbox(sl, Inches(0.3), Inches(1.38), Inches(12.7), Inches(0.28),
+           "SCORING FORMULA", size=9, bold=True, color=GREY_TEXT)
+    _rect(sl, Inches(0.3), Inches(1.7), Inches(12.7), Inches(0.72), fill=GREY_LT, line=GREY_MID)
+    _txbox(sl, Inches(0.5), Inches(1.78), Inches(12.3), Inches(0.56),
+           "Module Score  =  Σ (dimension_score × dimension_weight)  ÷  Σ (weights of scored dimensions only)\n"
+           "Overall Score  =  simple average of all module scores where module_score is not null (not_collected modules excluded)",
+           size=10, color=DARK)
+
+    # ── Section 2: Weights & thresholds side by side ─────────────────────────
+    _txbox(sl, Inches(0.3), Inches(2.55), Inches(6.0), Inches(0.28),
+           "DIMENSION WEIGHTS", size=9, bold=True, color=GREY_TEXT)
+    _txbox(sl, Inches(6.9), Inches(2.55), Inches(6.0), Inches(0.28),
+           "RAG THRESHOLDS", size=9, bold=True, color=GREY_TEXT)
+
+    dim_rows = [
+        ("Activation",        "20%"),
+        ("Data Volume",       "20%"),
+        ("Data Completeness", "25%"),
+        ("Process Adoption",  "25%"),
+        ("Integration",       "10%"),
+        ("TOTAL",             "100%"),
+    ]
+    row_h = Inches(0.38)
+    for i, (d, w) in enumerate(dim_rows):
+        y = Inches(2.88) + i * row_h
+        bg = PURPLE if d == "TOTAL" else (GREY_LT if i % 2 == 0 else WHITE)
+        fc = WHITE if d == "TOTAL" else DARK
+        _rect(sl, Inches(0.3), y, Inches(6.0), row_h, fill=bg)
+        _txbox(sl, Inches(0.45), y + Inches(0.06), Inches(4.0), Inches(0.26), d, size=10, bold=(d=="TOTAL"), color=fc)
+        _txbox(sl, Inches(5.5), y + Inches(0.06), Inches(0.7), Inches(0.26), w, size=10, bold=True, color=fc, align=PP_ALIGN.RIGHT)
+
+    rag_rows = [
+        ("Green",         "Score ≥ 70%",   RAG_RGB["green"]),
+        ("Amber",         "40% ≤ Score < 70%", RAG_RGB["amber"]),
+        ("Red",           "Score < 40%",   RAG_RGB["red"]),
+        ("Not Collected", "Dimension excluded from average", RGBColor(0x9C, 0xA3, 0xAF)),
+    ]
+    for i, (label, meaning, col) in enumerate(rag_rows):
+        y = Inches(2.88) + i * Inches(0.56)
+        _rect(sl, Inches(6.9), y, Inches(1.2), Inches(0.46), fill=col)
+        _txbox(sl, Inches(6.95), y + Inches(0.1), Inches(1.1), Inches(0.26),
+               label, size=9, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+        _rect(sl, Inches(8.15), y, Inches(4.8), Inches(0.46), fill=GREY_LT)
+        _txbox(sl, Inches(8.25), y + Inches(0.1), Inches(4.6), Inches(0.26),
+               meaning, size=10, color=DARK)
+
+    # ── Section 3: Not-collected rules ────────────────────────────────────────
+    _txbox(sl, Inches(0.3), Inches(5.22), Inches(12.7), Inches(0.28),
+           "NOT-COLLECTED RULES", size=9, bold=True, color=GREY_TEXT)
+    rules = [
+        "A dimension scores not-collected (—) when its source data is absent or the plugin is inactive.",
+        "Not-collected dimensions are excluded from the module score denominator — they do not count as zero.",
+        "A module with all dimensions not-collected shows as not-collected overall and is excluded from the overall score.",
+        "Financial completeness and integration are scored against PPM projects even when the financial plugin is off — "
+        "because the gap is measurable (0 of N projects have cost/budget plans).",
+    ]
+    for i, rule in enumerate(rules):
+        y = Inches(5.55) + i * Inches(0.28)
+        _txbox(sl, Inches(0.5), y, Inches(12.5), Inches(0.26),
+               f"•  {rule}", size=9, color=DARK)
+
+    _footer(sl, date, mode)
+    return sl
+
+
+def _slide_appendix_example(prs, metrics, scores, date, mode):
+    """Walk through one fully-scored and one partially-scored module as a worked example."""
+    sl = _blank(prs)
+    _header_band(sl, "Appendix B — Worked Calculation Examples",
+                 "Step-by-step derivation of module scores from raw metrics")
+
+    mods = metrics.get("modules", {})
+
+    # Pick the two most instructive modules: best fully-scored + PPM
+    fully_scored = [(k, scores[k]) for k in _MODULE_LABELS
+                    if scores.get(k, {}).get("module_score") is not None]
+    if not fully_scored:
+        _txbox(sl, Inches(0.5), Inches(2.0), Inches(12), Inches(0.5),
+               "No scored modules available.", size=12, color=GREY_TEXT)
+        _footer(sl, date, mode)
+        return sl
+
+    # Use the first two scored modules (or just one if only one scored)
+    examples = fully_scored[:2]
+    col_x = [Inches(0.25), Inches(6.8)]
+
+    for col_i, (mod_key, mod_scores) in enumerate(examples):
+        x   = col_x[col_i]
+        cw  = Inches(6.4)
+        mod = mods.get(mod_key, {})
+        ms  = mod_scores.get("module_score")
+        rag = _rag_label(ms)
+        col = RAG_RGB.get(rag, RGBColor(0x9C, 0xA3, 0xAF))
+
+        # Module header
+        _rect(sl, x, Inches(1.38), cw, Inches(0.38), fill=PURPLE)
+        _txbox(sl, x + Inches(0.12), Inches(1.44), Inches(4.0), Inches(0.26),
+               _MODULE_LABELS[mod_key], size=11, bold=True, color=WHITE)
+        _txbox(sl, x + Inches(4.2), Inches(1.44), Inches(2.0), Inches(0.26),
+               f"Score = {ms}%  [{rag.upper()}]", size=10, bold=True,
+               color=WHITE, align=PP_ALIGN.RIGHT)
+
+        # Column headers
+        hdrs = ["Dimension", "Weight", "Raw Input", "Score", "Weighted"]
+        cws  = [Inches(1.5), Inches(0.55), Inches(2.3), Inches(0.65), Inches(0.8)]
+        y = Inches(1.8)
+        hdr_h = Inches(0.3)
+        _rect(sl, x, y, cw, hdr_h, fill=GREY_MID)
+        cx = x
+        for hdr, w in zip(hdrs, cws):
+            _txbox(sl, cx + Inches(0.04), y + Inches(0.05), w - Inches(0.06), Inches(0.2),
+                   hdr, size=8, bold=True, color=DARK)
+            cx += w
+
+        # Dimension rows
+        dims_info = [
+            ("Activation",        "20%", 0.20, "activation"),
+            ("Data Volume",       "20%", 0.20, "data_volume"),
+            ("Data Completeness", "25%", 0.25, "data_completeness"),
+            ("Process Adoption",  "25%", 0.25, "process_adoption"),
+            ("Integration",       "10%", 0.10, "integration"),
+        ]
+        row_h = Inches(0.38)
+        y += hdr_h
+        total_w_used = 0.0
+        total_weighted = 0.0
+
+        for ri, (dim_label, wt_str, wt, dim_key) in enumerate(dims_info):
+            score = mod_scores.get(dim_key)
+            bg = GREY_LT if ri % 2 == 0 else WHITE
+            _rect(sl, x, y, cw, row_h, fill=bg)
+
+            # Raw input description
+            raw_desc = _raw_input_desc(mod_key, dim_key, mod, score)
+            weighted_str = "—"
+            if score is not None:
+                total_w_used += wt
+                total_weighted += wt * score
+                weighted_str = f"{round(wt * score, 1)}"
+
+            score_str = f"{score}%" if score is not None else "—"
+            row_vals = [dim_label, wt_str, raw_desc, score_str, weighted_str]
+            cx = x
+            for vi, (val, w) in enumerate(zip(row_vals, cws)):
+                tc = RAG_RGB.get(_rag_label(score), RGBColor(0x9C, 0xA3, 0xAF)) if vi == 3 and score is not None else DARK
+                _txbox(sl, cx + Inches(0.04), y + Inches(0.08), w - Inches(0.06), Inches(0.22),
+                       val, size=8, color=tc, bold=(vi == 3 and score is not None))
+                cx += w
+            y += row_h
+
+        # Totals row
+        denom = round(total_w_used, 2)
+        final  = round(total_weighted / total_w_used) if total_w_used else 0
+        _rect(sl, x, y, cw, row_h, fill=PURPLE)
+        _txbox(sl, x + Inches(0.12), y + Inches(0.08), Inches(4.0), Inches(0.24),
+               f"Total weight used: {denom:.2f}  ÷  Weighted sum: {round(total_weighted, 1)}",
+               size=8, color=WHITE)
+        _txbox(sl, x + Inches(4.8), y + Inches(0.08), Inches(1.5), Inches(0.24),
+               f"= {final}%", size=10, bold=True, color=WHITE, align=PP_ALIGN.RIGHT)
+
+    _footer(sl, date, mode)
+    return sl
+
+
+def _raw_input_desc(mod_key, dim_key, mod, score):
+    """One-line description of what raw metric(s) drove this dimension score."""
+    inputs = _MODULE_INPUTS.get(mod_key, [])
+    relevant = [lbl for lbl, mk, is_pct, inv, d_lbl in inputs
+                if d_lbl.lower().replace(" ", "_") in dim_key or dim_key in d_lbl.lower()]
+    if not relevant:
+        relevant = [lbl for lbl, mk, _, _, d_lbl in inputs][:1]
+
+    # Build concise value strings from known metrics
+    if dim_key == "activation":
+        return "Plugin active" if mod.get("plugin_active") else "Plugin inactive"
+    if dim_key == "data_volume":
+        total_key = "total_ci" if mod_key == "csdm" else ("total_stories" if mod_key == "agile" else "total")
+        n = mod.get(total_key)
+        return f"{n} records" if n is not None else "0 records"
+    vals = []
+    for lbl, metric_key, is_pct, invert, d_lbl in inputs:
+        if d_lbl.lower().replace(" ", "_") not in dim_key and dim_key not in d_lbl.lower():
+            continue
+        raw = mod.get(metric_key)
+        if raw is not None:
+            v = round(100.0 - float(raw)) if invert else round(float(raw))
+            vals.append(f"{lbl}: {v}%")
+    if vals:
+        return "  ·  ".join(vals[:2])
+    return "—" if score is None else f"derived score: {score}%"
+
+
 def _slide_summary(prs, metrics, scores, findings, overall, date, mode):
     sl = _blank(prs)
     _header_band(sl, "Assessment Summary",
@@ -810,11 +1138,16 @@ def render_pptx(metrics, scores, findings, mode="rde"):
     _slide_cover(prs, client, date, overall, mode)
     _slide_bar(prs, scores, overall, date, mode)
     _slide_scorecard(prs, scores, date, mode)
+    _slide_scorecard_explainer(prs, date, mode)
     _slide_scoring_basis(prs, metrics, scores, date, mode)
+    _slide_scoring_basis_explainer(prs, date, mode)
     _slide_governance(prs, metrics, date, mode)
     _slide_findings(prs, findings, date, mode)
     _slide_next_steps(prs, mode, findings, date)
     _slide_summary(prs, metrics, scores, findings, overall, date, mode)
+    _slide_appendix_divider(prs, date, mode)
+    _slide_appendix_methodology(prs, date, mode)
+    _slide_appendix_example(prs, metrics, scores, date, mode)
     return prs
 
 
