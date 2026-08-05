@@ -1295,6 +1295,117 @@ def _raw_input_desc(mod_key, dim_key, mod, score):
     return "—" if score is None else f"derived score: {score}%"
 
 
+def _slide_appendix_tables(prs, date, mode):
+    sl = _blank(prs)
+    _header_band(sl, "Appendix C — Source Tables",
+                 "All ServiceNow tables queried during this assessment, grouped by module")
+
+    _GREY_NC = RGBColor(0x9C, 0xA3, 0xAF)
+    HDR_H, ROW_H, GAP = Inches(0.26), Inches(0.22), Inches(0.05)
+
+    sections_left = [
+        ("Demand Management", [
+            ("pm_demand",           "Volume · completeness · approval rate · project linkage"),
+            ("pm_demand_category",  "Demand categorisation breakdown"),
+        ]),
+        ("Project Portfolio (PPM)", [
+            ("pm_project",          "Volume · completeness · status reports · approval rate"),
+            ("pm_project_task",     "Task completion rates"),
+            ("pm_program",          "Program linkage (integration)"),
+        ]),
+        ("Resource Management", [
+            ("pm_resource_plan",       "Volume · named resource fill · project linkage"),
+            ("pm_resource_allocation", "Actual vs planned hours (completeness)"),
+        ]),
+        ("Financial Management", [
+            ("pm_project_financials", "Financial coverage per project (integration)"),
+            ("pm_cost_plan",          "Cost plan linkage per project"),
+            ("pm_budget_plan",        "Budget plan linkage per project"),
+        ]),
+        ("Agile Development", [
+            ("rm_story",  "Volume · sprint assignment · team assignment"),
+            ("rm_sprint", "Completed sprint count (process adoption)"),
+            ("rm_team",   "Team reference for story / sprint assignment"),
+        ]),
+    ]
+
+    sections_right = [
+        ("Application Portfolio (APM)", [
+            ("apm_appl_now",       "Volume · lifecycle stage · owner (completeness)"),
+            ("apm_appl_lifecycle", "Lifecycle stage details"),
+        ]),
+        ("Innovation Management", [
+            ("innovation_idea",      "Volume · owner fill rate · conversion rate"),
+            ("innovation_challenge", "Challenge linkage"),
+        ]),
+        ("CSDM / CMDB Health", [
+            ("cmdb_ci",          "Volume · field completeness · % discovered (adoption)"),
+            ("cmdb_ci_service",  "Service count · service owner coverage"),
+            ("cmdb_rel_ci",      "Relationship density — total rels ÷ total CIs (integration)"),
+        ]),
+        ("Governance Overlays", [
+            ("timesheet_period",     "Active timesheet periods"),
+            ("timesheet_entry",      "Entries logged per period (Resource adoption)"),
+            ("pm_project_status",    "Status reports filed per project (PPM adoption)"),
+            ("sysapproval_approver", "Approval records for projects and demands"),
+        ]),
+        ("Scoring Models", [
+            ("pm_scoring_criterion", "Scoring criteria defined on instance"),
+            ("pm_portfolio_score",   "Records scored — demand_scored signal (Demand adoption)"),
+        ]),
+        ("Performance Analytics", [
+            ("pa_scorecard", "Active PA scorecards present on instance"),
+        ]),
+        ("Sidecars / Computed Inputs", [
+            ("_sidecar_spm_adoption",     "Plugin active flags → feeds Activation dimension"),
+            ("_sidecar_portfolio_health", "Stale record rates → portfolio health metrics"),
+        ]),
+    ]
+
+    def _render_sections(slide, sections, col_x, col_w):
+        y = Inches(1.38)
+        tbl_w  = col_w - Inches(0.08)
+        name_w = Inches(2.15)
+        desc_w = tbl_w - name_w - Inches(0.06)
+
+        for sec_label, tables in sections:
+            # Section header
+            _rect(slide, col_x, y, tbl_w, HDR_H, fill=PURPLE)
+            _txbox(slide, col_x + Inches(0.08), y + Inches(0.05),
+                   tbl_w - Inches(0.1), Inches(0.18),
+                   sec_label, size=8, bold=True, color=WHITE)
+            y += HDR_H
+
+            for ri, (tbl, desc) in enumerate(tables):
+                bg = GREY_LT if ri % 2 == 0 else WHITE
+                _rect(slide, col_x, y, tbl_w, ROW_H, fill=bg)
+                # table name — bold, left
+                _txbox(slide, col_x + Inches(0.08), y + Inches(0.04),
+                       name_w, Inches(0.16), tbl, size=8, bold=True, color=DARK)
+                # description — grey, right
+                _txbox(slide, col_x + name_w + Inches(0.1), y + Inches(0.04),
+                       desc_w, Inches(0.16), desc, size=7, color=GREY_TEXT)
+                y += ROW_H
+
+            y += GAP
+
+    _render_sections(sl, sections_left,  Inches(0.25), Inches(6.35))
+    _render_sections(sl, sections_right, Inches(6.73), Inches(6.35))
+
+    # Divider line between columns
+    _rect(sl, Inches(6.67), Inches(1.38), Inches(0.04), Inches(5.9), fill=GREY_MID)
+
+    # Bottom note
+    total = sum(len(t) for _, t in sections_left) + sum(len(t) for _, t in sections_right)
+    _txbox(sl, Inches(0.25), Inches(7.08), Inches(12.85), Inches(0.22),
+           f"{total} tables total  ·  Sidecars are JSON files computed from instance data and "
+           "stored alongside collector outputs — they are not direct ServiceNow table queries.",
+           size=7, color=GREY_TEXT, italic=True)
+
+    _footer(sl, date, mode)
+    return sl
+
+
 def _slide_summary(prs, metrics, scores, findings, overall, date, mode):
     sl = _blank(prs)
     _header_band(sl, "Assessment Summary",
@@ -1395,6 +1506,7 @@ def render_pptx(metrics, scores, findings, mode="rde"):
     _slide_appendix_divider(prs, date, mode)
     _slide_appendix_methodology(prs, date, mode)
     _slide_appendix_example(prs, metrics, scores, date, mode)
+    _slide_appendix_tables(prs, date, mode)
     return prs
 
 
