@@ -900,129 +900,183 @@ def _slide_scorecard_explainer(prs, metrics, scores, date, mode):
     return sl
 
 
+def _chip_row(sl, x, y, chip_color, text, size=8, text_color=None):
+    """Draw one RAG chip + label on a single line. Returns y of next line."""
+    chip_w, chip_h, line_h = Inches(0.18), Inches(0.16), Inches(0.22)
+    if chip_color is not None:
+        _rect(sl, x, y + Inches(0.03), chip_w, chip_h, fill=chip_color)
+        _txbox(sl, x + chip_w + Inches(0.05), y, Inches(5.0), line_h,
+               text, size=size, color=text_color or DARK)
+    else:
+        _txbox(sl, x + Inches(0.04), y, Inches(5.0), line_h,
+               text, size=size - 1, color=GREY_TEXT, italic=True)
+    return y + line_h
+
+
 def _slide_scoring_basis_explainer(prs, metrics, scores, date, mode):
     sl = _blank(prs)
     _header_band(sl, "How Dimension Scores Are Derived",
-                 "What each dimension measures, which tables are queried, and how raw counts map to 0–100")
+                 "What each dimension measures · which table is queried · how the score is calculated")
 
-    # 3-column layout: Dimension | What it measures & source | Scoring rules
-    col_x   = [Inches(0.25), Inches(3.85), Inches(8.85)]
-    col_w   = [Inches(3.55), Inches(4.95), Inches(4.35)]
-    row_h   = Inches(1.12)
-    y0      = Inches(1.35)
-    mods_data = metrics.get("modules", {})
+    # Layout: 3 columns
+    # Col A — Dimension name + weight  (x=0.25, w=2.5")
+    # Col B — What it measures         (x=2.80, w=4.5")
+    # Col C — How it scores            (x=7.35, w=5.75")
+    COL_A_X, COL_A_W = Inches(0.25), Inches(2.5)
+    COL_B_X, COL_B_W = Inches(2.80), Inches(4.5)
+    COL_C_X, COL_C_W = Inches(7.35), Inches(5.75)
+    row_h = Inches(1.12)
+    y0    = Inches(1.35)
 
-    # Header row
+    # Table header bar
     _rect(sl, Inches(0.25), y0, Inches(12.85), Inches(0.30), fill=PURPLE)
-    for txt, cx, cw in zip(["Dimension  (weight)", "What it measures  ·  source tables", "Scoring thresholds / rules"],
-                            col_x, col_w):
+    for txt, cx, cw in [
+        ("Dimension  (weight)", COL_A_X, COL_A_W),
+        ("What it measures  ·  source table", COL_B_X, COL_B_W),
+        ("How it scores  —  visual threshold guide", COL_C_X, COL_C_W),
+    ]:
         _txbox(sl, cx + Inches(0.08), y0 + Inches(0.06), cw - Inches(0.1), Inches(0.20),
                txt, size=8, bold=True, color=WHITE)
 
-    # Data Volume thresholds by module
+    # Vertical column dividers (light lines)
+    for dx in [COL_B_X, COL_C_X]:
+        _rect(sl, dx - Inches(0.04), y0, Inches(0.04), row_h * 5 + Inches(0.30),
+              fill=GREY_MID)
+
     vol100 = {"demand": 50, "ppm": 20, "resource": 10, "financial": 10,
               "agile": 50, "apm": 10, "innovation": 5, "csdm": 500}
     vol60  = {"demand": 10, "ppm": 5,  "resource": 5,  "financial": 3,
               "agile": 10, "apm": 3,   "innovation": 2, "csdm": 50}
 
+    # vol example strings — show 3 most relevant modules
+    vol_green_ex = "≥20 projects · ≥50 stories · ≥500 CIs · ≥50 demands"
+    vol_amber_ex = "≥5 projects  · ≥10 stories  · ≥50 CIs  · ≥10 demands"
+
     rows = [
-        # (dim_label, weight_pct, what_col, rules_col)
+        # (dim, pct, what_text, chip_lines)
+        # chip_lines = list of (color_or_None, label)
         (
             "Activation", "20%",
-            "Checks whether the module's ServiceNow plugin is installed and active.\n\n"
-            "Plugin IDs checked:\n"
-            + "\n".join(f"  {_MODULE_LABELS[k]}: {_PLUGIN_IDS[k]}"
-                        for k in _MODULE_LABELS),
-            "Active → 100%\nInactive → Not Collected (—)\n\n"
-            "Exception: Demand shares a plugin ID with PPM.\n"
-            "It only scores Active if demand records also exist\n"
-            "(otherwise it would falsely inherit PPM's plugin status).",
+            "Is the module's ServiceNow plugin installed and\n"
+            "active on this instance?\n\n"
+            "Each module maps to a unique plugin ID.\n"
+            "Demand is an exception — it shares a plugin ID\n"
+            "with PPM and also requires ≥1 demand record.",
+            [
+                (RAG_RGB["green"],           "Plugin active on instance  →  100%"),
+                (RGBColor(0x9C,0xA3,0xAF),   "Plugin not active  →  Not Collected (—)"),
+                (None, "Not Collected dims are excluded from the"),
+                (None, "module score — they do not count as zero."),
+            ],
         ),
         (
             "Data Volume", "20%",
-            "Counts records in the module's primary table to determine\n"
-            "whether there is enough data to assess the module meaningfully.\n\n"
+            "How many records exist in the module's primary\n"
+            "table? If there are too few records, the module\n"
+            "cannot be meaningfully assessed.\n\n"
             "Primary tables:\n"
-            + "\n".join(f"  {_MODULE_LABELS[k]}: {_PRIMARY_TABLES[k]}"
-                        for k in _MODULE_LABELS),
-            "Per-module thresholds (Green / Amber / Red):\n"
-            + "\n".join(
-                f"  {_MODULE_LABELS[k]}: ≥{vol100[k]} → 100%  |  ≥{vol60[k]} → 60%  |  ≥1 → 20%"
-                for k in _MODULE_LABELS)
-            + "\n\nZero records → Not Collected (—)",
+            "  PPM → pm_project\n"
+            "  Agile → rm_story\n"
+            "  CSDM → cmdb_ci\n"
+            "  Demand → pm_demand    (others similar)",
+            [
+                (RAG_RGB["green"], f"≥ full threshold  →  100%"),
+                (None,             f"  {vol_green_ex}"),
+                (RAG_RGB["amber"], f"≥ partial threshold  →  60%"),
+                (None,             f"  {vol_amber_ex}"),
+                (RAG_RGB["red"],   "≥ 1 record  →  20%"),
+                (RGBColor(0x9C,0xA3,0xAF), "0 records  →  Not Collected (—)"),
+            ],
         ),
         (
             "Data Completeness", "25%",
-            "Measures how well key fields are populated across records.\n"
-            "Each field is expressed as a fill rate (0–100%).\n"
-            "The dimension score is the average of all field scores.\n\n"
-            "Fields assessed per module:\n"
-            + "\n".join(f"  {_MODULE_LABELS[k]}: {_COMPLETENESS_FIELDS.get(k,'—')}"
-                        for k in _MODULE_LABELS),
-            "Each field fill rate → 0–100%\n"
-            "Dimension score = average of non-null rates\n\n"
-            "Null fields are excluded from the average\n"
-            "(they do not count as zero).\n\n"
-            "Inverted fields: some metrics are scored as\n"
-            "100 − rate (e.g. shell-project % → completeness\n"
-            "is higher when shell-project % is lower).",
+            "What % of records have key fields populated?\n"
+            "Each field is scored as a fill rate (0–100%).\n"
+            "The dimension score = average of all field rates.\n\n"
+            "Fields checked per module:\n"
+            "  PPM: owner, % complete, phase (shell check)\n"
+            "  Agile: sprint assigned, team assigned\n"
+            "  CSDM: op. status, owner, support group, env\n"
+            "  APM: lifecycle stage, owned_by\n"
+            "  Others: see Scoring Basis slide",
+            [
+                (None, "Score = average of field fill rates  (0–100%)"),
+                (None, ""),
+                (None, "Null fields are excluded — not counted as zero."),
+                (None, ""),
+                (None, "Inverted fields: 100 − fill rate"),
+                (None, "  (used when lower value = better quality,"),
+                (None, "   e.g. shell-project % or no-owner %)"),
+            ],
         ),
         (
             "Process Adoption", "25%",
-            "Measures whether governance processes are actively used —\n"
-            "not just whether the plugin is on, but whether people use it.\n\n"
-            "Signal per module:\n"
-            + "\n".join(f"  {_MODULE_LABELS[k]}: {_ADOPTION_SIGNALS.get(k,'—')}"
-                        for k in _MODULE_LABELS),
-            "Scoring varies by module:\n\n"
-            "  Agile: completed sprints\n"
-            "    >5 → 100%  |  >1 → 60%  |  >0 → 20%\n\n"
+            "Are people actually using the module's governance\n"
+            "features — or is the plugin on but idle?\n\n"
+            "Signals used by module:\n"
+            "  PPM: status reports filed ≤30d + approval rate\n"
+            "  Agile: number of completed sprints\n"
             "  Resource: timesheet entries logged\n"
-            "    >200 → 100%  |  >50 → 60%  |  >0 → 20%\n\n"
-            "  Financial: project approvals\n"
-            "    >10 → 100%  |  >2 → 60%  |  >0 → 20%\n\n"
-            "Zero records = 0% (not not-collected) —\n"
-            "absence of process IS a finding.",
+            "  Financial: project approvals logged\n"
+            "  Demand: approval rate + scoring model usage\n"
+            "  CSDM: % discovered CIs + % services with owner\n"
+            "  APM: not assessed (no standard signal)",
+            [
+                (RAG_RGB["green"], "High activity  →  100%"),
+                (None,             "  >5 sprints · >200 timesheets · >10 approvals"),
+                (RAG_RGB["amber"], "Moderate activity  →  60%"),
+                (None,             "  >1 sprint · >50 timesheets · >2 approvals"),
+                (RAG_RGB["red"],   "Any activity  →  20%"),
+                (None,             ""),
+                (None,             "0 activity  =  0%  (NOT Not Collected)"),
+                (None,             "Absence of process is a real finding."),
+            ],
         ),
         (
             "Integration", "10%",
-            "Measures whether records are linked across SPM modules,\n"
-            "indicating that the modules are being used as a connected\n"
-            "platform rather than isolated tools.\n\n"
-            "Signal per module:\n"
-            + "\n".join(f"  {_MODULE_LABELS[k]}: {_INTEGRATION_SIGNAL.get(k,'—')}"
-                        for k in _MODULE_LABELS),
-            "Most modules: % of records with a cross-module link\n"
-            "  0–100% (higher = better integrated)\n\n"
-            "CSDM exception: relationship density\n"
-            "  total CMDB relationships ÷ total CIs\n"
-            "  ≥ 2.0 → 100%  |  ≥ 0.5 → 60%  |  < 0.5 → 20%\n\n"
-            "APM integration = % apps linked to a CMDB CI\n"
-            "  (cross-module between APM and CSDM/CMDB).",
+            "Are this module's records linked to adjacent\n"
+            "SPM modules, showing platform-wide usage?\n\n"
+            "Linkage checked per module:\n"
+            "  PPM: projects grouped under a program\n"
+            "  Demand: demands linked to a project\n"
+            "  Resource: resource plans linked to a project\n"
+            "  Financial: projects with any financial record\n"
+            "  Agile: stories assigned to a team\n"
+            "  APM: applications linked to a CMDB CI\n"
+            "  CSDM: relationship density (rels ÷ CIs)",
+            [
+                (None,             "Most modules: % of records with cross-module link"),
+                (None,             "  0% – 100%  (higher = better integrated)"),
+                (None,             ""),
+                (None,             "CSDM uses relationship density instead:"),
+                (RAG_RGB["green"], "≥ 2.0 relationships per CI  →  100%"),
+                (RAG_RGB["amber"], "≥ 0.5 relationships per CI  →  60%"),
+                (RAG_RGB["red"],   "< 0.5 relationships per CI  →  20%"),
+            ],
         ),
     ]
 
-    for ri, (dim, pct, what, rules) in enumerate(rows):
-        y = y0 + Inches(0.30) + ri * (row_h + Inches(0.03))
+    for ri, (dim, pct, what, chip_lines) in enumerate(rows):
+        y = y0 + Inches(0.30) + ri * row_h
         bg = GREY_LT if ri % 2 == 0 else WHITE
         _rect(sl, Inches(0.25), y, Inches(12.85), row_h, fill=bg)
-        _rect(sl, Inches(0.25), y, Inches(0.14), row_h, fill=PURPLE)
+        _rect(sl, Inches(0.25), y, Inches(0.12), row_h, fill=PURPLE)
 
-        # Dim name + weight
-        _txbox(sl, col_x[0] + Inches(0.18), y + Inches(0.06), Inches(2.6), Inches(0.24),
+        # Col A: dim name + weight
+        _txbox(sl, COL_A_X + Inches(0.2), y + Inches(0.08), Inches(2.1), Inches(0.26),
                dim, size=10, bold=True, color=DARK)
-        _txbox(sl, col_x[0] + Inches(0.18), y + Inches(0.32), Inches(1.0), Inches(0.22),
-               pct, size=10, bold=True, color=PURPLE)
+        _txbox(sl, COL_A_X + Inches(0.2), y + Inches(0.36), Inches(0.8), Inches(0.22),
+               pct, size=11, bold=True, color=PURPLE)
 
-        # What col
-        _txbox(sl, col_x[1] + Inches(0.06), y + Inches(0.06),
-               col_w[1] - Inches(0.12), row_h - Inches(0.1),
+        # Col B: what it measures
+        _txbox(sl, COL_B_X + Inches(0.08), y + Inches(0.06),
+               COL_B_W - Inches(0.14), row_h - Inches(0.1),
                what, size=7, color=DARK)
 
-        # Rules col
-        _txbox(sl, col_x[2] + Inches(0.06), y + Inches(0.06),
-               col_w[2] - Inches(0.12), row_h - Inches(0.1),
-               rules, size=7, color=DARK)
+        # Col C: chip lines
+        cy = y + Inches(0.08)
+        for chip_color, label in chip_lines:
+            cy = _chip_row(sl, COL_C_X + Inches(0.12), cy, chip_color, label, size=8)
 
     _footer(sl, date, mode)
     return sl
