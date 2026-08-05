@@ -720,116 +720,309 @@ def _slide_next_steps(prs, mode, findings, date):
     return sl
 
 
-def _slide_scorecard_explainer(prs, date, mode):
+_PLUGIN_IDS = {
+    "demand":     "com.snc.sdlc.ppm_core (shared with PPM)",
+    "ppm":        "com.snc.sdlc.ppm_core",
+    "resource":   "com.snc.rm",
+    "financial":  "com.snc.financial_mgmt",
+    "agile":      "com.snc.agile",
+    "apm":        "com.snc.apm",
+    "innovation": "com.snc.innovation_mgmt",
+    "csdm":       "cmdb_ci table (data-driven)",
+}
+
+_PRIMARY_TABLES = {
+    "demand":     "pm_demand",
+    "ppm":        "pm_project",
+    "resource":   "pm_resource_plan",
+    "financial":  "pm_project_financials",
+    "agile":      "rm_story",
+    "apm":        "apm_appl_now",
+    "innovation": "innovation_idea",
+    "csdm":       "cmdb_ci",
+}
+
+_COMPLETENESS_FIELDS = {
+    "demand":     "demand_priority_set, assigned_to",
+    "ppm":        "percent_complete, assigned_to, phase (shell check)",
+    "resource":   "resource.name filled, actual vs planned hours",
+    "financial":  "cost_plan linked, budget_plan linked, actuals present",
+    "agile":      "sprint assigned, team assigned",
+    "apm":        "lifecycle_stage, owned_by",
+    "innovation": "assigned_to",
+    "csdm":       "operational_status, owned_by, support_group, environment",
+}
+
+_ADOPTION_SIGNALS = {
+    "demand":     "approval workflow rate + scoring model usage",
+    "ppm":        "status report filed ≤30 days + approval workflow rate",
+    "resource":   "timesheet entries logged (>200=100%, >50=60%, >0=20%)",
+    "financial":  "project approvals logged (>10=100%, >2=60%, >0=20%)",
+    "agile":      "completed sprints (>5=100%, >1=60%, >0=20%)",
+    "apm":        "not assessed (no standard governance signal)",
+    "innovation": "% ideas linked to demand or project",
+    "csdm":       "% CIs discovered (not manually entered) + % services with owner",
+}
+
+_INTEGRATION_SIGNAL = {
+    "demand":     "% demands linked to a project",
+    "ppm":        "% projects grouped under a program",
+    "resource":   "% resource plans linked to a project",
+    "financial":  "% PPM projects with any financial record",
+    "agile":      "% stories assigned to a team",
+    "apm":        "% applications linked to a CMDB CI",
+    "innovation": "% ideas linked to demand or project",
+    "csdm":       "relationship density (total CMDB rels ÷ total CIs)",
+}
+
+
+def _slide_scorecard_explainer(prs, metrics, scores, date, mode):
     sl = _blank(prs)
     _header_band(sl, "How to Read the Scorecard",
-                 "Scoring framework — thresholds, dimension weights, and not-collected handling")
+                 "RAG thresholds · dimension weights · which modules are active on this instance")
 
-    # ── Left: RAG thresholds ──────────────────────────────────────────────────
-    _txbox(sl, Inches(0.3), Inches(1.38), Inches(4.0), Inches(0.3),
-           "RAG THRESHOLDS", size=9, bold=True, color=GREY_TEXT)
+    # ── Top-left: RAG thresholds (compact) ───────────────────────────────────
+    _txbox(sl, Inches(0.3), Inches(1.38), Inches(3.8), Inches(0.24),
+           "RAG THRESHOLDS", size=8, bold=True, color=GREY_TEXT)
     thresholds = [
-        ("Green",         "≥ 70%",   RAG_RGB["green"]),
-        ("Amber",         "40 – 69%", RAG_RGB["amber"]),
-        ("Red",           "< 40%",   RAG_RGB["red"]),
-        ("Grey (—)",      "Plugin not active or data not collected",
-         RGBColor(0x9C, 0xA3, 0xAF)),
+        ("Green",    "Score ≥ 70%",                          RAG_RGB["green"]),
+        ("Amber",    "40% ≤ score < 70%",                    RAG_RGB["amber"]),
+        ("Red",      "Score < 40%",                          RAG_RGB["red"]),
+        ("— (grey)", "Plugin inactive or no data collected", RGBColor(0x9C, 0xA3, 0xAF)),
     ]
     for i, (label, meaning, col) in enumerate(thresholds):
-        y = Inches(1.75) + i * Inches(0.72)
-        _rect(sl, Inches(0.3), y, Inches(1.5), Inches(0.52), fill=col)
-        _txbox(sl, Inches(0.35), y + Inches(0.12), Inches(1.4), Inches(0.28),
-               label, size=11, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
-        _rect(sl, Inches(1.85), y, Inches(4.3), Inches(0.52), fill=GREY_LT)
-        _txbox(sl, Inches(1.95), y + Inches(0.12), Inches(4.1), Inches(0.28),
-               meaning, size=10, color=DARK)
+        y = Inches(1.64) + i * Inches(0.50)
+        _rect(sl, Inches(0.3), y, Inches(1.2), Inches(0.40), fill=col)
+        _txbox(sl, Inches(0.33), y + Inches(0.10), Inches(1.14), Inches(0.22),
+               label, size=9, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+        _rect(sl, Inches(1.55), y, Inches(4.35), Inches(0.40), fill=GREY_LT)
+        _txbox(sl, Inches(1.65), y + Inches(0.10), Inches(4.15), Inches(0.22),
+               meaning, size=9, color=DARK)
 
-    # ── Centre: dimension weights ─────────────────────────────────────────────
-    _txbox(sl, Inches(6.6), Inches(1.38), Inches(6.4), Inches(0.3),
-           "DIMENSION WEIGHTS", size=9, bold=True, color=GREY_TEXT)
-    dims = [
-        ("Activation",        "20%", "Is the module plugin active on the instance?"),
-        ("Data Volume",       "20%", "Are sufficient records present to assess the module?"),
-        ("Data Completeness", "25%", "Are key fields populated across records?"),
-        ("Process Adoption",  "25%", "Are governance mechanisms actively in use?"),
-        ("Integration",       "10%", "Are records linked across SPM modules?"),
+    # ── Top-right: dimension weights ──────────────────────────────────────────
+    _txbox(sl, Inches(6.3), Inches(1.38), Inches(6.9), Inches(0.24),
+           "DIMENSION WEIGHTS  (scored dims only — inactive dims excluded from average)",
+           size=8, bold=True, color=GREY_TEXT)
+    dims_w = [
+        ("Activation",        0.20, "Plugin installed & active on instance"),
+        ("Data Volume",       0.20, "Enough records to assess the module"),
+        ("Data Completeness", 0.25, "Key fields populated across records"),
+        ("Process Adoption",  0.25, "Governance mechanisms actively used"),
+        ("Integration",       0.10, "Records linked across SPM modules"),
     ]
-    bar_max = Inches(3.0)
-    weights = [0.20, 0.20, 0.25, 0.25, 0.10]
-    for i, ((dim, pct, desc), w) in enumerate(zip(dims, weights)):
-        y = Inches(1.75) + i * Inches(0.72)
-        _rect(sl, Inches(6.6), y, Inches(6.4), Inches(0.52), fill=GREY_LT)
-        _txbox(sl, Inches(6.7), y + Inches(0.04), Inches(1.7), Inches(0.24),
+    bar_max = Inches(2.6)
+    for i, (dim, w, desc) in enumerate(dims_w):
+        y = Inches(1.64) + i * Inches(0.50)
+        _rect(sl, Inches(6.3), y, Inches(6.9), Inches(0.40), fill=GREY_LT)
+        _txbox(sl, Inches(6.42), y + Inches(0.04), Inches(1.9), Inches(0.20),
                dim, size=9, bold=True, color=DARK)
-        _txbox(sl, Inches(6.7), y + Inches(0.27), Inches(5.8), Inches(0.22),
-               desc, size=8, color=GREY_TEXT, italic=True)
-        # weight bar
-        _rect(sl, Inches(8.55), y + Inches(0.12), bar_max, Inches(0.28),
-              fill=RGBColor(0xE9, 0xE9, 0xEB))
-        _rect(sl, Inches(8.55), y + Inches(0.12), bar_max * (w / 0.25), Inches(0.28),
+        _txbox(sl, Inches(6.42), y + Inches(0.22), Inches(4.2), Inches(0.16),
+               desc, size=7, color=GREY_TEXT, italic=True)
+        _rect(sl, Inches(10.75), y + Inches(0.06), bar_max, Inches(0.26),
+              fill=RGBColor(0xE2, 0xE8, 0xF0))
+        _rect(sl, Inches(10.75), y + Inches(0.06), bar_max * (w / 0.25), Inches(0.26),
               fill=PURPLE)
-        _txbox(sl, Inches(11.65), y + Inches(0.1), Inches(0.9), Inches(0.3),
-               pct, size=10, bold=True, color=PURPLE, align=PP_ALIGN.RIGHT)
+        _txbox(sl, Inches(13.45), y + Inches(0.07), Inches(0.7), Inches(0.22),
+               f"{int(w*100)}%", size=9, bold=True, color=PURPLE, align=PP_ALIGN.RIGHT)
 
-    # ── Bottom: formula note ──────────────────────────────────────────────────
-    _rect(sl, Inches(0.3), Inches(5.65), Inches(12.7), Inches(0.9), fill=PURPLE)
-    _txbox(sl, Inches(0.5), Inches(5.72), Inches(12.3), Inches(0.35),
-           "Formula: module score = weighted average of scored dimensions only. "
-           "Inactive modules (grey) are excluded from the denominator — they do not "
-           "pull the overall score down.",
-           size=10, color=WHITE)
+    # ── Bottom: per-module plugin / activation status table ───────────────────
+    _txbox(sl, Inches(0.3), Inches(4.18), Inches(12.7), Inches(0.24),
+           "MODULE STATUS ON THIS INSTANCE", size=8, bold=True, color=GREY_TEXT)
+
+    # Table header
+    hdr_y = Inches(4.44)
+    _rect(sl, Inches(0.3), hdr_y, Inches(12.73), Inches(0.30), fill=PURPLE)
+    hdrs = [("Module", 2.2), ("Plugin / Source", 3.1), ("Primary Table", 1.9),
+            ("Records", 1.1), ("Score", 0.8), ("Status", 3.5)]
+    hx = Inches(0.3)
+    for hdr, cw in hdrs:
+        _txbox(sl, hx + Inches(0.06), hdr_y + Inches(0.05), Inches(cw - 0.1), Inches(0.20),
+               hdr, size=8, bold=True, color=WHITE)
+        hx += Inches(cw)
+
+    mods_data = metrics.get("modules", {})
+    row_h = Inches(0.33)
+    for ri, mod_key in enumerate(_MODULE_LABELS):
+        mod  = mods_data.get(mod_key, {})
+        ms   = scores.get(mod_key, {}).get("module_score")
+        rag  = _rag_label(ms)
+        plug = mod.get("plugin_active")
+
+        # record count
+        if mod_key == "csdm":
+            n = mod.get("total_ci")
+            unit = "CIs"
+        elif mod_key == "agile":
+            n = mod.get("total_stories")
+            unit = "stories"
+        else:
+            n = mod.get("total")
+            unit = "records"
+        rec_str = f"{n:,} {unit}" if n else "—"
+
+        # score cell
+        score_str = f"{ms}%" if ms is not None else "—"
+        score_col = RAG_RGB.get(rag, RGBColor(0x9C, 0xA3, 0xAF))
+
+        # status reason
+        if ms is not None:
+            status_str = f"Scored  [{rag.upper()}]"
+            status_col = score_col
+        elif not plug:
+            status_str = "Plugin not active on instance"
+            status_col = RGBColor(0x9C, 0xA3, 0xAF)
+        elif not n:
+            status_str = "No records collected"
+            status_col = RGBColor(0x9C, 0xA3, 0xAF)
+        else:
+            status_str = "Not collected"
+            status_col = RGBColor(0x9C, 0xA3, 0xAF)
+
+        y = hdr_y + Inches(0.30) + ri * row_h
+        bg = GREY_LT if ri % 2 == 0 else WHITE
+        _rect(sl, Inches(0.3), y, Inches(12.73), row_h, fill=bg)
+
+        vals = [
+            (_MODULE_LABELS[mod_key],         2.2,  DARK,      False),
+            (_PLUGIN_IDS.get(mod_key, "—"),   3.1,  GREY_TEXT, False),
+            (_PRIMARY_TABLES.get(mod_key,"—"),1.9,  GREY_TEXT, False),
+            (rec_str,                          1.1,  DARK,      True),
+            (score_str,                        0.8,  score_col, True),
+            (status_str,                       3.5,  status_col,False),
+        ]
+        vx = Inches(0.3)
+        for val, cw, fc, bold in vals:
+            _txbox(sl, vx + Inches(0.06), y + Inches(0.07), Inches(cw - 0.1), Inches(0.20),
+                   val, size=8, bold=bold, color=fc)
+            vx += Inches(cw)
 
     _footer(sl, date, mode)
     return sl
 
 
-def _slide_scoring_basis_explainer(prs, date, mode):
+def _slide_scoring_basis_explainer(prs, metrics, scores, date, mode):
     sl = _blank(prs)
     _header_band(sl, "How Dimension Scores Are Derived",
-                 "Each dimension translates raw metrics into a 0–100 score using the rules below")
+                 "What each dimension measures, which tables are queried, and how raw counts map to 0–100")
 
-    rules = [
-        ("Activation", "20%",
-         "100% if the module plugin is active on the instance.\n"
-         "Not collected (—) if the plugin is off or cannot be confirmed.\n"
-         "Exception: Demand requires at least one demand record, as it shares a plugin ID with PPM."),
-        ("Data Volume", "20%",
-         "100  if record count ≥ full threshold (e.g. 20+ projects, 50+ stories, 500+ CIs)\n"
-         " 60  if count ≥ partial threshold (e.g. 5+ projects, 10+ stories, 50+ CIs)\n"
-         " 20  if at least one record exists\n"
-         "Not collected if zero records."),
-        ("Data Completeness", "25%",
-         "Average of key field fill rates for the module — e.g. for PPM: "
-         "inverse of shell-project %, inverse of no-owner %, and project completeness %. "
-         "Each metric is normalised 0–100. Fields that are null (not collected) are excluded "
-         "from the average rather than treated as zero."),
-        ("Process Adoption", "25%",
-         "Governance signals: approval rates, status report frequency, timesheet entries, "
-         "completed sprints, or scoring model usage — depending on module. "
-         "Zero records in a governance table scores 0%, not not-collected, "
-         "because absence of process is a real finding."),
-        ("Integration", "10%",
-         "Linkage rate between this module's records and adjacent SPM modules — "
-         "e.g. projects grouped under programs, demands linked to projects, "
-         "applications linked to CMDB CIs, or CI relationship density (rels ÷ CIs)."),
+    # 3-column layout: Dimension | What it measures & source | Scoring rules
+    col_x   = [Inches(0.25), Inches(3.85), Inches(8.85)]
+    col_w   = [Inches(3.55), Inches(4.95), Inches(4.35)]
+    row_h   = Inches(1.12)
+    y0      = Inches(1.35)
+    mods_data = metrics.get("modules", {})
+
+    # Header row
+    _rect(sl, Inches(0.25), y0, Inches(12.85), Inches(0.30), fill=PURPLE)
+    for txt, cx, cw in zip(["Dimension  (weight)", "What it measures  ·  source tables", "Scoring thresholds / rules"],
+                            col_x, col_w):
+        _txbox(sl, cx + Inches(0.08), y0 + Inches(0.06), cw - Inches(0.1), Inches(0.20),
+               txt, size=8, bold=True, color=WHITE)
+
+    # Data Volume thresholds by module
+    vol100 = {"demand": 50, "ppm": 20, "resource": 10, "financial": 10,
+              "agile": 50, "apm": 10, "innovation": 5, "csdm": 500}
+    vol60  = {"demand": 10, "ppm": 5,  "resource": 5,  "financial": 3,
+              "agile": 10, "apm": 3,   "innovation": 2, "csdm": 50}
+
+    rows = [
+        # (dim_label, weight_pct, what_col, rules_col)
+        (
+            "Activation", "20%",
+            "Checks whether the module's ServiceNow plugin is installed and active.\n\n"
+            "Plugin IDs checked:\n"
+            + "\n".join(f"  {_MODULE_LABELS[k]}: {_PLUGIN_IDS[k]}"
+                        for k in _MODULE_LABELS),
+            "Active → 100%\nInactive → Not Collected (—)\n\n"
+            "Exception: Demand shares a plugin ID with PPM.\n"
+            "It only scores Active if demand records also exist\n"
+            "(otherwise it would falsely inherit PPM's plugin status).",
+        ),
+        (
+            "Data Volume", "20%",
+            "Counts records in the module's primary table to determine\n"
+            "whether there is enough data to assess the module meaningfully.\n\n"
+            "Primary tables:\n"
+            + "\n".join(f"  {_MODULE_LABELS[k]}: {_PRIMARY_TABLES[k]}"
+                        for k in _MODULE_LABELS),
+            "Per-module thresholds (Green / Amber / Red):\n"
+            + "\n".join(
+                f"  {_MODULE_LABELS[k]}: ≥{vol100[k]} → 100%  |  ≥{vol60[k]} → 60%  |  ≥1 → 20%"
+                for k in _MODULE_LABELS)
+            + "\n\nZero records → Not Collected (—)",
+        ),
+        (
+            "Data Completeness", "25%",
+            "Measures how well key fields are populated across records.\n"
+            "Each field is expressed as a fill rate (0–100%).\n"
+            "The dimension score is the average of all field scores.\n\n"
+            "Fields assessed per module:\n"
+            + "\n".join(f"  {_MODULE_LABELS[k]}: {_COMPLETENESS_FIELDS.get(k,'—')}"
+                        for k in _MODULE_LABELS),
+            "Each field fill rate → 0–100%\n"
+            "Dimension score = average of non-null rates\n\n"
+            "Null fields are excluded from the average\n"
+            "(they do not count as zero).\n\n"
+            "Inverted fields: some metrics are scored as\n"
+            "100 − rate (e.g. shell-project % → completeness\n"
+            "is higher when shell-project % is lower).",
+        ),
+        (
+            "Process Adoption", "25%",
+            "Measures whether governance processes are actively used —\n"
+            "not just whether the plugin is on, but whether people use it.\n\n"
+            "Signal per module:\n"
+            + "\n".join(f"  {_MODULE_LABELS[k]}: {_ADOPTION_SIGNALS.get(k,'—')}"
+                        for k in _MODULE_LABELS),
+            "Scoring varies by module:\n\n"
+            "  Agile: completed sprints\n"
+            "    >5 → 100%  |  >1 → 60%  |  >0 → 20%\n\n"
+            "  Resource: timesheet entries logged\n"
+            "    >200 → 100%  |  >50 → 60%  |  >0 → 20%\n\n"
+            "  Financial: project approvals\n"
+            "    >10 → 100%  |  >2 → 60%  |  >0 → 20%\n\n"
+            "Zero records = 0% (not not-collected) —\n"
+            "absence of process IS a finding.",
+        ),
+        (
+            "Integration", "10%",
+            "Measures whether records are linked across SPM modules,\n"
+            "indicating that the modules are being used as a connected\n"
+            "platform rather than isolated tools.\n\n"
+            "Signal per module:\n"
+            + "\n".join(f"  {_MODULE_LABELS[k]}: {_INTEGRATION_SIGNAL.get(k,'—')}"
+                        for k in _MODULE_LABELS),
+            "Most modules: % of records with a cross-module link\n"
+            "  0–100% (higher = better integrated)\n\n"
+            "CSDM exception: relationship density\n"
+            "  total CMDB relationships ÷ total CIs\n"
+            "  ≥ 2.0 → 100%  |  ≥ 0.5 → 60%  |  < 0.5 → 20%\n\n"
+            "APM integration = % apps linked to a CMDB CI\n"
+            "  (cross-module between APM and CSDM/CMDB).",
+        ),
     ]
 
-    weights = [0.20, 0.20, 0.25, 0.25, 0.10]
-    row_h = Inches(0.96)
-    y0 = Inches(1.35)
-    for i, ((dim, pct, body), w) in enumerate(zip(rules, weights)):
-        y = y0 + i * (row_h + Inches(0.04))
-        bg = GREY_LT if i % 2 == 0 else WHITE
-        _rect(sl, Inches(0.25), y, Inches(12.8), row_h, fill=bg)
-        _rect(sl, Inches(0.25), y, Inches(0.18), row_h, fill=PURPLE)
+    for ri, (dim, pct, what, rules) in enumerate(rows):
+        y = y0 + Inches(0.30) + ri * (row_h + Inches(0.03))
+        bg = GREY_LT if ri % 2 == 0 else WHITE
+        _rect(sl, Inches(0.25), y, Inches(12.85), row_h, fill=bg)
+        _rect(sl, Inches(0.25), y, Inches(0.14), row_h, fill=PURPLE)
+
         # Dim name + weight
-        _txbox(sl, Inches(0.52), y + Inches(0.06), Inches(2.2), Inches(0.28),
-               dim, size=11, bold=True, color=DARK)
-        _txbox(sl, Inches(2.75), y + Inches(0.06), Inches(0.7), Inches(0.28),
+        _txbox(sl, col_x[0] + Inches(0.18), y + Inches(0.06), Inches(2.6), Inches(0.24),
+               dim, size=10, bold=True, color=DARK)
+        _txbox(sl, col_x[0] + Inches(0.18), y + Inches(0.32), Inches(1.0), Inches(0.22),
                pct, size=10, bold=True, color=PURPLE)
-        # Body text
-        _txbox(sl, Inches(0.52), y + Inches(0.38), Inches(12.2), Inches(0.54),
-               body, size=8, color=GREY_TEXT)
+
+        # What col
+        _txbox(sl, col_x[1] + Inches(0.06), y + Inches(0.06),
+               col_w[1] - Inches(0.12), row_h - Inches(0.1),
+               what, size=7, color=DARK)
+
+        # Rules col
+        _txbox(sl, col_x[2] + Inches(0.06), y + Inches(0.06),
+               col_w[2] - Inches(0.12), row_h - Inches(0.1),
+               rules, size=7, color=DARK)
 
     _footer(sl, date, mode)
     return sl
@@ -1138,9 +1331,9 @@ def render_pptx(metrics, scores, findings, mode="rde"):
     _slide_cover(prs, client, date, overall, mode)
     _slide_bar(prs, scores, overall, date, mode)
     _slide_scorecard(prs, scores, date, mode)
-    _slide_scorecard_explainer(prs, date, mode)
+    _slide_scorecard_explainer(prs, metrics, scores, date, mode)
     _slide_scoring_basis(prs, metrics, scores, date, mode)
-    _slide_scoring_basis_explainer(prs, date, mode)
+    _slide_scoring_basis_explainer(prs, metrics, scores, date, mode)
     _slide_governance(prs, metrics, date, mode)
     _slide_findings(prs, findings, date, mode)
     _slide_next_steps(prs, mode, findings, date)
