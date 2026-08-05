@@ -349,6 +349,143 @@ def _slide_scorecard(prs, scores, date, mode):
     return sl
 
 
+def _fmt(val, is_pct=False, invert=False):
+    if val is None:
+        return "—"
+    if invert:
+        val = 100.0 - float(val)
+    if is_pct:
+        return f"{round(float(val))}%"
+    return str(val)
+
+
+# Key metric inputs per module: (row_label, metric_key, is_pct, invert, dimension_label)
+_MODULE_INPUTS = {
+    "demand": [
+        ("Total demands",       "total",                    False, False, "Data Volume"),
+        ("Linked to project",   "linked_to_project_pct",    True,  False, "Integration"),
+        ("With approval",       "with_approval_pct",        True,  False, "Process Adoption"),
+        ("Priority set",        "demand_priority_set_pct",  True,  False, "Completeness"),
+        ("Has owner",           "no_owner_pct",             True,  True,  "Completeness"),
+    ],
+    "ppm": [
+        ("Total projects",      "total",                    False, False, "Data Volume"),
+        ("Shell projects",      "shell_project_pct",        True,  False, "Completeness"),
+        ("Has owner",           "no_owner_pct",             True,  True,  "Completeness"),
+        ("Grouped in program",  "with_program_pct",         True,  False, "Integration"),
+        ("With approval",       "with_approval_pct",        True,  False, "Process Adoption"),
+    ],
+    "resource": [
+        ("Total resource plans","total",                    False, False, "Data Volume"),
+        ("Named resource",      "resource_plan_named_pct",  True,  False, "Completeness"),
+        ("Linked to project",   "linked_to_project_pct",    True,  False, "Integration"),
+        ("Timesheet coverage",  "timesheet_coverage_pct",   True,  False, "Process Adoption"),
+    ],
+    "financial": [
+        ("With financials",     "projects_with_financials_pct", True, False, "Integration"),
+        ("With cost plan",      "projects_with_cost_plan_pct",  True, False, "Completeness"),
+        ("With budget plan",    "projects_with_budget_plan_pct",True, False, "Completeness"),
+    ],
+    "agile": [
+        ("Total stories",       "total_stories",            False, False, "Data Volume"),
+        ("Stories with sprint", "no_sprint_pct",            True,  True,  "Completeness"),
+        ("Stories with team",   "no_team_pct",              True,  True,  "Completeness"),
+        ("Completed sprints",   "completed_sprint_count",   False, False, "Process Adoption"),
+    ],
+    "apm": [
+        ("Total applications",  "total",                    False, False, "Data Volume"),
+        ("With lifecycle stage","with_lifecycle_stage_pct", True,  False, "Completeness"),
+        ("Has owner",           "with_owner_pct",           True,  False, "Completeness"),
+        ("Linked to CMDB",      "with_cmdb_link_pct",       True,  False, "Integration"),
+    ],
+    "innovation": [
+        ("Total ideas",         "total",                    False, False, "Data Volume"),
+        ("Has owner",           "no_owner_pct",             True,  True,  "Completeness"),
+        ("Linked to project",   "linked_to_demand_or_project_pct", True, False, "Integration"),
+    ],
+    "csdm": [
+        ("Total CIs",           "total_ci",                 False, False, "Data Volume"),
+        ("Total services",      "total_services",           False, False, "Data Volume"),
+        ("CI: operational status set","ci_with_operational_status_pct", True, False, "Completeness"),
+        ("CI: has owner",       "ci_with_owner_pct",        True,  False, "Completeness"),
+        ("CI: has support group","ci_with_support_group_pct",True,  False, "Completeness"),
+        ("CI: auto-discovered", "ci_discovered_pct",        True,  False, "Process Adoption"),
+        ("Services with owner", "services_with_owner_pct",  True,  False, "Process Adoption"),
+        ("Total relationships", "total_relationships",      False, False, "Integration"),
+    ],
+}
+
+
+def _slide_scoring_basis(prs, metrics, scores, date, mode):
+    sl = _blank(prs)
+    _header_band(sl, "Scoring Basis",
+                 "Key metric inputs that drove each module's dimension scores")
+
+    mods = metrics.get("modules", {})
+    keys = list(_MODULE_LABELS.keys())
+    left_keys  = keys[:4]   # demand, ppm, resource, financial
+    right_keys = keys[4:]   # agile, apm, innovation, csdm
+
+    col_x     = [Inches(0.25), Inches(6.8)]
+    col_w     = Inches(6.4)
+    y_start   = Inches(1.38)
+    row_h     = Inches(0.3)
+    hdr_h     = Inches(0.36)
+    gap_mod   = Inches(0.1)
+
+    for col_i, col_keys in enumerate([left_keys, right_keys]):
+        x  = col_x[col_i]
+        y  = y_start
+
+        for mod_key in col_keys:
+            label  = _MODULE_LABELS[mod_key]
+            ms     = scores.get(mod_key, {}).get("module_score")
+            rag    = _rag_label(ms)
+            col    = RAG_RGB.get(rag, RGBColor(0x9C, 0xA3, 0xAF))
+            mod    = mods.get(mod_key, {})
+            inputs = _MODULE_INPUTS.get(mod_key, [])
+
+            # Module header bar
+            _rect(sl, x, y, col_w, hdr_h, fill=PURPLE)
+            _txbox(sl, x + Inches(0.12), y + Inches(0.05), Inches(4.0), Inches(0.26),
+                   label, size=10, bold=True, color=WHITE)
+            score_str = f"{ms}%" if ms is not None else "Not collected"
+            _txbox(sl, x + Inches(4.1), y + Inches(0.05), Inches(2.1), Inches(0.26),
+                   score_str, size=10, bold=True, color=WHITE, align=PP_ALIGN.RIGHT)
+            y += hdr_h
+
+            if ms is None and not mod.get("plugin_active", False):
+                # Not collected — single grey row
+                _rect(sl, x, y, col_w, row_h, fill=GREY_LT)
+                _txbox(sl, x + Inches(0.15), y + Inches(0.04), col_w - Inches(0.2), Inches(0.22),
+                       "Plugin not active — not collected", size=8,
+                       color=GREY_TEXT, italic=True)
+                y += row_h
+            else:
+                for row_i, (row_lbl, metric_key, is_pct, invert, dim_lbl) in enumerate(inputs):
+                    raw = mod.get(metric_key)
+                    val_str = _fmt(raw, is_pct=is_pct, invert=invert)
+                    bg = GREY_LT if row_i % 2 == 0 else WHITE
+                    _rect(sl, x, y, col_w, row_h, fill=bg)
+                    _txbox(sl, x + Inches(0.15), y + Inches(0.04),
+                           Inches(2.8), Inches(0.22),
+                           row_lbl, size=8, color=DARK)
+                    _txbox(sl, x + Inches(3.0), y + Inches(0.04),
+                           Inches(1.5), Inches(0.22),
+                           val_str, size=8, bold=(raw is not None), color=DARK,
+                           align=PP_ALIGN.CENTER)
+                    _txbox(sl, x + Inches(4.6), y + Inches(0.04),
+                           Inches(1.7), Inches(0.22),
+                           dim_lbl, size=7, color=GREY_TEXT, italic=True,
+                           align=PP_ALIGN.RIGHT)
+                    y += row_h
+
+            y += gap_mod
+
+    _footer(sl, date, mode)
+    return sl
+
+
 def _slide_governance(prs, metrics, date, mode):
     sl = _blank(prs)
     _header_band(sl, "Governance & Process Adoption",
@@ -673,6 +810,7 @@ def render_pptx(metrics, scores, findings, mode="rde"):
     _slide_cover(prs, client, date, overall, mode)
     _slide_bar(prs, scores, overall, date, mode)
     _slide_scorecard(prs, scores, date, mode)
+    _slide_scoring_basis(prs, metrics, scores, date, mode)
     _slide_governance(prs, metrics, date, mode)
     _slide_findings(prs, findings, date, mode)
     _slide_next_steps(prs, mode, findings, date)

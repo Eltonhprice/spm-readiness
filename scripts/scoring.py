@@ -88,6 +88,9 @@ def _activation(mod_key, mod):
     plugin = mod.get("plugin_active")
     if plugin is None or plugin is False:
         return None
+    # demand shares a plugin ID with PPM — only score active if records exist
+    if mod_key == "demand" and not (mod.get("total") or 0):
+        return None
     return 100
 
 
@@ -158,6 +161,8 @@ def _process_adoption(mod_key, mod, gov):
     scoring    = gov.get("scoring_models", {})
 
     if mod_key == "demand":
+        if not (mod.get("total") or 0):
+            return None  # no demand records = process adoption not assessable
         vals = [_v(mod.get("with_approval_pct")),
                 100 if scoring.get("demand_scored", 0) > 0 else 0]
         return _avg_non_none(vals)
@@ -181,6 +186,8 @@ def _process_adoption(mod_key, mod, gov):
     if mod_key == "apm":
         return None
     if mod_key == "innovation":
+        if not mod.get("plugin_active"):
+            return None  # plugin off — no records to measure adoption against
         converted = mod.get("linked_to_demand_or_project_pct") or 0
         return _v(converted)
     if mod_key == "csdm":
