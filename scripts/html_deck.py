@@ -140,7 +140,7 @@ def _slide_cover(client, date, overall, mode="rde"):
     )
     mode_label = mode.upper()
     return f"""
-<div class="label">Accenture SAGE · {mode_label} · SPM Readiness Assessment · AS-IS</div>
+<div class="label">Accenture · {mode_label} · SPM Readiness Assessment · AS-IS</div>
 <h1 style="margin:12px 0 4px;">{client}</h1>
 <div style="font-size:13px;color:#888;margin-bottom:40px;">{date}</div>
 <div class="label">Overall SPM Readiness Score</div>

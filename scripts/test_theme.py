@@ -13,10 +13,10 @@ def test_header_has_badge():
     h = render_header("X", badge="SPM Readiness · AS-IS")
     assert "SPM Readiness · AS-IS" in h
 
-def test_footer_contains_sage():
+def test_footer_contains_date():
     f = render_footer(date="2026-08-04")
-    assert "SAGE" in f
     assert "2026-08-04" in f
+    assert "Accenture" in f
 
 def test_section_badge_contains_label():
     b = section_badge("Demand Management", "M3 12h4")

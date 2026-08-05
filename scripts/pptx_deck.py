@@ -131,7 +131,7 @@ def _header_band(slide, title, subtitle=""):
 def _footer(slide, date="", mode="rde"):
     y = H - Inches(0.35)
     _rect(slide, 0, y, W, Inches(0.35), fill=PURPLE)
-    label = f"Accenture SAGE  ·  {mode.upper()}  ·  SPM Readiness Assessment  ·  {date}"
+    label = f"Accenture  ·{mode.upper()}  ·  SPM Readiness Assessment  ·  {date}"
     _txbox(slide, Inches(0.4), y + Inches(0.05), Inches(12), Inches(0.25),
            label, size=9, color=RGBColor(0xE9, 0xD5, 0xFF))
 
@@ -185,7 +185,7 @@ def _slide_cover(prs, client, date, overall, mode):
 
     # Badge
     _txbox(sl, Inches(0.5), Inches(0.35), Inches(12), Inches(0.4),
-           f"ACCENTURE SAGE  ·  {mode.upper()}  ·  SPM READINESS ASSESSMENT  ·  AS-IS",
+           f"ACCENTURE  ·  {mode.upper()}  ·  SPM READINESS ASSESSMENT  ·  AS-IS",
            size=9, bold=True, color=PURPLE)
 
     # Client name
@@ -1092,7 +1092,7 @@ def _slide_appendix_divider(prs, date, mode):
            size=18, color=RGBColor(0xE9, 0xD5, 0xFF))
     # Footer without mode/date branding
     _txbox(sl, Inches(0.4), H - Inches(0.4), Inches(12), Inches(0.3),
-           "Accenture SAGE  ·  SPM Readiness Assessment  ·  AS-IS Profile",
+           "Accenture  ·SPM Readiness Assessment  ·  AS-IS Profile",
            size=9, color=RGBColor(0xE9, 0xD5, 0xFF))
     return sl
 
