@@ -9,6 +9,7 @@ _MODULE_LABELS = {
     "apm":        "Application Portfolio Management",
     "innovation": "Innovation Management",
     "csdm":       "CSDM/CMDB Health",
+    "timesheet":  "Timesheet Management",
 }
 
 _DIM_LABELS = {
@@ -46,6 +47,20 @@ _SIGNIFICANCE = {
     ("csdm", "data_completeness"): "Missing required CI fields (owner, status, environment) reduce reliability of CMDB-driven reporting.",
     ("csdm", "process_adoption"):  "Low automated discovery rate indicates CIs are manually maintained, increasing staleness risk.",
     ("csdm", "integration"):       "Low CI relationship density means service dependency mapping and impact analysis cannot function reliably.",
+    # Demand extended signals
+    ("demand", "process_adoption"): (
+        "Low demand governance score indicates insufficient approval coverage, inactive demand board, "
+        "stale demand records, or poor lifecycle throughput — one or more of these signals is below threshold."
+    ),
+    ("demand", "integration"): (
+        "Demands are not adequately linked to projects, portfolios, or programs — delivery traceability "
+        "and portfolio-level planning are impaired."
+    ),
+    # Timesheet module
+    ("timesheet", "data_volume"):       "Low timesheet entry volume indicates actual effort is not being captured at the expected density.",
+    ("timesheet", "data_completeness"): "Low entries-per-period ratio suggests timesheet periods are configured but not being completed by staff.",
+    ("timesheet", "process_adoption"):  "Low proportion of closed/processed periods indicates timesheet governance is not being completed on schedule.",
+    ("timesheet", "integration"):       "Low resource plan coverage means timesheets are not being linked back to project resource plans.",
 }
 
 
@@ -53,7 +68,8 @@ def generate_findings(metrics, scores):
     findings = []
     mods = metrics.get("modules", {})
 
-    for mod_key in ["demand", "ppm", "resource", "financial", "agile", "apm", "innovation", "csdm"]:
+    for mod_key in ["demand", "ppm", "resource", "financial", "agile",
+                    "apm", "innovation", "csdm", "timesheet"]:
         mod_scores = scores.get(mod_key, {})
         mod_data   = mods.get(mod_key, {})
 

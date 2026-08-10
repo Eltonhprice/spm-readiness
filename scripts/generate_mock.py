@@ -10,7 +10,8 @@ from datetime import datetime, timedelta
 random.seed(42)
 
 _TODAY = datetime.now()
-STATES_DEMAND  = ["open", "in_progress", "closed", "cancelled", "approved"]
+STATES_DEMAND  = ["open", "in_progress", "closed", "cancelled", "approved",
+                  "qualified", "under_review", "submitted"]
 STATES_PROJECT = ["planning", "in_progress", "closed", "on_hold"]
 STATES_STORY   = ["open", "in_progress", "complete", "cancelled"]
 
@@ -45,14 +46,19 @@ def _write_sidecar(out_dir, name, data):
 
 
 def generate_mock(out_dir):
-    # Demand
+    # Demand — includes portfolio, program, sys_updated_on (items 1, 4, 5, 7, 13)
+    portfolio_ids = [_uid() for _ in range(4)]
+    program_ids   = [_uid() for _ in range(3)]
     demands = [
         {"sys_id": _uid(), "short_description": f"Demand {i}",
          "state": random.choice(STATES_DEMAND),
          "category": random.choice(["IT", "Business", "Security", ""]),
          "assigned_to": "" if i % 6 == 0 else _uid(),
          "project": _uid() if i % 3 != 0 else "",
+         "portfolio": random.choice(portfolio_ids) if i % 5 != 0 else "",
+         "program":   random.choice(program_ids)   if i % 7 != 0 else "",
          "sys_created_on": _date(random.randint(10, 400)),
+         "sys_updated_on": _date(random.randint(1, 90)),
          "priority": str(random.randint(1, 4)),
          "business_justification": "Justification text",
          "requested_by": _uid()}
@@ -99,15 +105,17 @@ def generate_mock(out_dir):
     _write(out_dir, "ppm", "pm_project", projects)
     _write(out_dir, "ppm", "pm_project_task", tasks)
 
-    # Resource
+    # Resource — includes sys_updated_on for request staleness (item 9)
     resource_plans = [
         {"sys_id": _uid(), "project": random.choice(proj_ids) if i % 5 != 0 else "",
          "resource": "" if i % 7 == 0 else _uid(), "role": "Developer",
-         "state": "open", "planned_hours": str(random.randint(40, 200)),
+         "state": random.choice(["open", "open", "open", "submitted", "closed"]),
+         "planned_hours": str(random.randint(40, 200)),
          "actual_hours": str(random.randint(10, 150)),
          "available_hours": str(random.randint(160, 240)),
          "start_date": "2026-01-01", "end_date": "2026-06-30",
-         "sys_created_on": _date(90)}
+         "sys_created_on": _date(90),
+         "sys_updated_on": _date(random.randint(1, 60))}
         for i in range(1, 41)
     ]
     _write(out_dir, "resource", "pm_resource_plan", resource_plans)
@@ -338,10 +346,11 @@ def generate_mock(out_dir):
         "project_completeness_pct": 61,
         "demand_priority_set_pct": 74,
         "resource_plan_named_pct": 83,
-        "projects_stale_90d": 7,
-        "projects_stale_90d_pct": 12,
-        "demands_stale_90d": 11,
-        "demands_stale_90d_pct": 8,
+        # New thresholds: 30d for projects, 60d for demands (items 1, 2)
+        "projects_stale_30d": 9,
+        "projects_stale_30d_pct": 15,
+        "demands_stale_60d": 18,
+        "demands_stale_60d_pct": 13,
     })
 
     print(f"Mock data written to: {out_dir}")

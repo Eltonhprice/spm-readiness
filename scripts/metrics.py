@@ -5,8 +5,28 @@ from scripts import status as st
 
 _TODAY = datetime.now(timezone.utc)
 
-_OPEN_STATES = {"open", "in_progress", "new", "draft", "planning", "active"}
+# Human-readable labels + ServiceNow numeric choice codes (e.g. 1=Open, 2=Work In Progress)
+_OPEN_STATES = {"open", "in_progress", "new", "draft", "planning", "active", "1", "2", "-5"}
 _CLOSED_STATES = {"closed", "cancelled", "rejected", "complete", "completed"}
+
+# Demand states that indicate the demand has progressed beyond initial submission
+_DEMAND_PROGRESSED_STATES = {
+    "qualified", "approved", "implementing", "implemented",
+    "complete", "completed", "closed",
+}
+
+# Demand states that indicate the record is awaiting governance review
+_DEMAND_REVIEW_STATES = {
+    "qualified", "under_review", "submitted", "pending_approval",
+    "awaiting_approval",
+}
+
+# Resource plan states considered "open / awaiting fulfilment"
+_RESOURCE_OPEN_STATES = {"open", "requested", "pending", "submitted", "draft"}
+
+# Story states considered backlog — includes ServiceNow numeric choice codes:
+# -6=Backlog, -7=Ready, -5=Draft; and human-readable labels used in mock/export data
+_STORY_BACKLOG_STATES = {"open", "new", "backlog", "ready", "todo", "-5", "-6", "-7", "1"}
 
 _PLUGIN_MAP = {
     "demand":     "com.snc.sdlc.ppm_core",
@@ -33,6 +53,7 @@ def compute_metrics(buckets, client, input_dir):
         "apm":        _apm(buckets, plugins),
         "innovation": _innovation(buckets, plugins),
         "csdm":       _csdm(buckets),
+        "timesheet":  _timesheet(buckets),
     }
 
     return {
@@ -41,10 +62,10 @@ def compute_metrics(buckets, client, input_dir):
         "roles":              adoption.get("roles") or {},
         "pa_adoption":        _pa_adoption(buckets),
         "data_quality": {
-            "projects_stale_90d":     health.get("projects_stale_90d"),
-            "projects_stale_90d_pct": health.get("projects_stale_90d_pct"),
-            "demands_stale_90d":      health.get("demands_stale_90d"),
-            "demands_stale_90d_pct":  health.get("demands_stale_90d_pct"),
+            "projects_stale_30d":     health.get("projects_stale_30d"),
+            "projects_stale_30d_pct": health.get("projects_stale_30d_pct"),
+            "demands_stale_60d":      health.get("demands_stale_60d"),
+            "demands_stale_60d_pct":  health.get("demands_stale_60d_pct"),
         },
         "spm_workspace_active": adoption.get("spm_workspace_active"),
         "coverage_matrix":    _coverage_matrix(modules),
@@ -57,11 +78,11 @@ def compute_metrics(buckets, client, input_dir):
 
 
 def _demand(buckets, plugins, health):
-    records = buckets.get("pm_demand") or []
-    n = len(records)
+    records   = buckets.get("pm_demand") or []
+    n         = len(records)
     approvals = buckets.get("sysapproval_approver") or []
 
-    by_state = _count_by(records, "state")
+    by_state  = _count_by(records, "state")
     open_recs = [r for r in records if _is_open(r.get("state"))]
 
     ages = [_age_days(r.get("sys_created_on")) for r in open_recs]
@@ -71,31 +92,65 @@ def _demand(buckets, plugins, health):
     linked  = sum(1 for r in records if r.get("project"))
     no_own  = sum(1 for r in records if not r.get("assigned_to"))
     dem_ids = {r.get("sys_id") for r in records}
-    appr_d  = {a.get("source_id") for a in approvals
-               if a.get("source_table") == "pm_demand" and a.get("source_id") in dem_ids}
+    appr_d  = {_ref_id(a.get("document_id")) for a in approvals
+               if a.get("source_table") == "pm_demand"
+               and _ref_id(a.get("document_id")) in dem_ids}
+
+    # Portfolio and program linkage (items 4, 5)
+    with_portfolio = sum(1 for r in records if r.get("portfolio"))
+    with_program   = sum(1 for r in records if r.get("program"))
+
+    # Demand throughput: % of demands that have progressed beyond initial submission (item 13)
+    throughput_count = sum(
+        count for state, count in by_state.items()
+        if state in _DEMAND_PROGRESSED_STATES
+    )
+    demand_throughput_pct = st.pct(throughput_count, n) if n else None
+
+    # Demand workbench governance proxy: % of review-ready demands touched in last 14 days (items 7, 8)
+    cutoff_14 = _days_ago(14)
+    review_recs = [r for r in records if (r.get("state") or "").lower().strip() in _DEMAND_REVIEW_STATES]
+    demand_reviewed_14d_pct = None
+    if review_recs:
+        reviewed = sum(
+            1 for r in review_recs
+            if _parse_date(r.get("sys_updated_on")) and
+               _parse_date(r.get("sys_updated_on")) >= cutoff_14
+        )
+        demand_reviewed_14d_pct = st.pct(reviewed, len(review_recs))
+
+    # Staleness from sidecar (60-day threshold for demands, item 1)
+    stale_60d_pct = health.get("demands_stale_60d_pct")
 
     return {
-        "total":                n,
-        "by_state":             by_state,
-        "avg_age_open_days":    avg_age,
-        "linked_to_project_pct": st.pct(linked, n),
-        "no_owner_pct":         st.pct(no_own, n),
-        "with_approval_pct":    st.pct(len(appr_d), n),
-        "demand_priority_set_pct": health.get("demand_priority_set_pct"),
-        "plugin_active":        plugins.get(_PLUGIN_MAP["demand"], False),
+        "total":                    n,
+        "by_state":                 by_state,
+        "avg_age_open_days":        avg_age,
+        "linked_to_project_pct":   st.pct(linked, n),
+        "demand_with_portfolio_pct": st.pct(with_portfolio, n),
+        "demand_with_program_pct":  st.pct(with_program, n),
+        "no_owner_pct":             st.pct(no_own, n),
+        "with_approval_pct":        st.pct(len(appr_d), n),
+        "demand_priority_set_pct":  health.get("demand_priority_set_pct"),
+        "demand_throughput_pct":    demand_throughput_pct,
+        "demand_reviewed_14d_pct":  demand_reviewed_14d_pct,
+        "stale_60d_pct":            stale_60d_pct,
+        "plugin_active":            plugins.get(_PLUGIN_MAP["demand"], False),
         "footprint_status": {
             "total":             st.measured(n) if n else st.not_collected("pm_demand not collected"),
             "linked_pct":        st.measured(st.pct(linked, n)) if n else st.not_collected(),
             "with_approval_pct": st.measured(st.pct(len(appr_d), n)) if n else st.not_collected(),
+            "portfolio_pct":     st.measured(st.pct(with_portfolio, n)) if n else st.not_collected(),
+            "program_pct":       st.measured(st.pct(with_program, n)) if n else st.not_collected(),
         },
     }
 
 
 def _ppm(buckets, plugins, health):
-    projects = buckets.get("pm_project") or []
-    tasks    = buckets.get("pm_project_task") or []
-    programs = buckets.get("pm_program") or []
-    statuses = buckets.get("pm_project_status") or []
+    projects  = buckets.get("pm_project") or []
+    tasks     = buckets.get("pm_project_task") or []
+    programs  = buckets.get("pm_program") or []
+    statuses  = buckets.get("pm_project_status") or []
     approvals = buckets.get("sysapproval_approver") or []
     n = len(projects)
 
@@ -126,24 +181,29 @@ def _ppm(buckets, plugins, health):
     status_30d_pct = st.pct(len(recent_status_proj & active_proj), len(active_proj)) \
                      if statuses and active_proj else None
 
-    appr_proj = {a.get("source_id") for a in approvals
-                 if a.get("source_table") == "pm_project" and a.get("source_id") in proj_ids}
+    appr_proj = {_ref_id(a.get("document_id")) for a in approvals
+                 if a.get("source_table") == "pm_project"
+                 and _ref_id(a.get("document_id")) in proj_ids}
+
+    # Project staleness (30-day threshold — active projects should be updated monthly, item 2)
+    stale_30d_pct = health.get("projects_stale_30d_pct")
 
     return {
-        "total":                  n,
-        "by_state":               by_state,
-        "program_count":          len(programs),
-        "with_program_pct":       st.pct(with_prog, n),
-        "shell_project_pct":      st.pct(shell, n),
-        "no_owner_pct":           st.pct(no_owner, n),
+        "total":                      n,
+        "by_state":                   by_state,
+        "program_count":              len(programs),
+        "with_program_pct":           st.pct(with_prog, n),
+        "shell_project_pct":          st.pct(shell, n),
+        "no_owner_pct":               st.pct(no_owner, n),
         "avg_schedule_variance_days": avg_variance,
-        "status_report_30d_pct":  status_30d_pct,
-        "with_approval_pct":      st.pct(len(appr_proj), n),
-        "project_completeness_pct": health.get("project_completeness_pct"),
-        "plugin_active":          plugins.get(_PLUGIN_MAP["ppm"], False),
+        "status_report_30d_pct":      status_30d_pct,
+        "with_approval_pct":          st.pct(len(appr_proj), n),
+        "project_completeness_pct":   health.get("project_completeness_pct"),
+        "stale_30d_pct":              stale_30d_pct,
+        "plugin_active":              plugins.get(_PLUGIN_MAP["ppm"], False),
         "footprint_status": {
-            "total":         st.measured(n) if n else st.not_collected("pm_project not collected"),
-            "shell_pct":     st.measured(st.pct(shell, n)) if n else st.not_collected(),
+            "total":          st.measured(n) if n else st.not_collected("pm_project not collected"),
+            "shell_pct":      st.measured(st.pct(shell, n)) if n else st.not_collected(),
             "status_30d_pct": st.measured(status_30d_pct) if status_30d_pct is not None
                               else st.not_collected("pm_project_status not collected"),
         },
@@ -177,15 +237,29 @@ def _resource(buckets, plugins, health):
     ts_plan_ids = {t.get("timesheet") for t in timesheets}
     ts_coverage = st.pct(len(plan_ids & ts_plan_ids), n) if timesheets and n else None
 
+    # Resource request staleness: open plans not updated in 30 days (item 9)
+    cutoff_30 = _days_ago(30)
+    open_plans = [p for p in plans
+                  if (p.get("state") or "").lower().strip() in _RESOURCE_OPEN_STATES]
+    resource_requests_stale_30d_pct = None
+    if open_plans:
+        stale = sum(
+            1 for p in open_plans
+            if _parse_date(p.get("sys_updated_on")) and
+               _parse_date(p.get("sys_updated_on")) < cutoff_30
+        )
+        resource_requests_stale_30d_pct = st.pct(stale, len(open_plans))
+
     return {
-        "total":               n,
-        "linked_to_project_pct": st.pct(linked, n),
-        "no_named_resource_pct": st.pct(no_named, n),
-        "utilisation_rate":    util_rate,
-        "alloc_actual_coverage_pct": alloc_coverage,
-        "timesheet_coverage_pct": ts_coverage,
-        "resource_plan_named_pct": health.get("resource_plan_named_pct"),
-        "plugin_active":       plugins.get(_PLUGIN_MAP["resource"], False),
+        "total":                      n,
+        "linked_to_project_pct":      st.pct(linked, n),
+        "no_named_resource_pct":      st.pct(no_named, n),
+        "utilisation_rate":           util_rate,
+        "alloc_actual_coverage_pct":  alloc_coverage,
+        "timesheet_coverage_pct":     ts_coverage,
+        "resource_plan_named_pct":    health.get("resource_plan_named_pct"),
+        "resource_requests_stale_30d_pct": resource_requests_stale_30d_pct,
+        "plugin_active":              plugins.get(_PLUGIN_MAP["resource"], False),
         "footprint_status": {
             "total":       st.measured(n) if n else st.not_collected("pm_resource_plan not collected"),
             "util_rate":   st.measured(util_rate) if util_rate is not None else st.not_collected(),
@@ -221,13 +295,13 @@ def _financial(buckets, plugins):
     by_type = _count_by(cost_plans, "cost_type")
 
     return {
-        "projects_with_financials_pct": with_fin,
-        "projects_with_cost_plan_pct":  with_cost,
+        "projects_with_financials_pct":  with_fin,
+        "projects_with_cost_plan_pct":   with_cost,
         "projects_with_budget_plan_pct": with_budget,
-        "projects_no_financial_pct":    no_financial,
+        "projects_no_financial_pct":     no_financial,
         "budget_vs_actual_availability_pct": bva_pct,
-        "cost_plan_by_type":            by_type,
-        "plugin_active":                plugins.get(_PLUGIN_MAP["financial"], False),
+        "cost_plan_by_type":             by_type,
+        "plugin_active":                 plugins.get(_PLUGIN_MAP["financial"], False),
         "footprint_status": {
             "financials_collected": st.measured(len(financials)) if financials
                                     else st.not_collected("pm_project_financials not collected"),
@@ -249,7 +323,8 @@ def _agile(buckets, plugins):
     no_sprint    = sum(1 for s in stories if not s.get("sprint"))
     no_team      = sum(1 for s in stories if not s.get("team"))
 
-    completed_sp = [s for s in sprints if (s.get("state") or "").lower() in ("complete", "closed")]
+    # rm_sprint state=3 = Complete in ServiceNow numeric codes
+    completed_sp = [s for s in sprints if (s.get("state") or "").lower() in ("complete", "closed", "3")]
     velocity_vals = [_safe_float(s.get("completed_points")) for s in completed_sp]
     velocity_vals = [v for v in velocity_vals if v is not None]
     avg_velocity = round(sum(velocity_vals) / len(velocity_vals), 1) if velocity_vals else None
@@ -259,17 +334,31 @@ def _agile(buckets, plugins):
         t = s.get("team") or "_unassigned"
         stories_per_team[t] = stories_per_team.get(t, 0) + 1
 
+    # Backlog staleness: stories in backlog states not updated in 45 days (item 3)
+    cutoff_45 = _days_ago(45)
+    backlog_stories = [s for s in stories
+                       if (s.get("state") or "").lower().strip() in _STORY_BACKLOG_STATES]
+    backlog_stale_45d_pct = None
+    if backlog_stories:
+        stale = sum(
+            1 for s in backlog_stories
+            if _parse_date(s.get("sys_updated_on")) and
+               _parse_date(s.get("sys_updated_on")) < cutoff_45
+        )
+        backlog_stale_45d_pct = st.pct(stale, len(backlog_stories))
+
     return {
-        "total_stories":         n_s,
-        "by_state":              by_state,
-        "team_count":            len(teams),
-        "sprint_count":          len(sprints),
+        "total_stories":          n_s,
+        "by_state":               by_state,
+        "team_count":             len(teams),
+        "sprint_count":           len(sprints),
         "completed_sprint_count": len(completed_sp),
-        "avg_velocity":          avg_velocity,
-        "no_sprint_pct":         st.pct(no_sprint, n_s),
-        "no_team_pct":           st.pct(no_team, n_s),
-        "stories_per_team_dist": stories_per_team,
-        "plugin_active":         plugins.get(_PLUGIN_MAP["agile"], False),
+        "avg_velocity":           avg_velocity,
+        "no_sprint_pct":          st.pct(no_sprint, n_s),
+        "no_team_pct":            st.pct(no_team, n_s),
+        "backlog_stale_45d_pct":  backlog_stale_45d_pct,
+        "stories_per_team_dist":  stories_per_team,
+        "plugin_active":          plugins.get(_PLUGIN_MAP["agile"], False),
         "footprint_status": {
             "stories":  st.measured(n_s) if n_s else st.not_collected("rm_story not collected"),
             "sprints":  st.measured(len(sprints)) if sprints else st.not_collected("rm_sprint not collected"),
@@ -290,12 +379,12 @@ def _apm(buckets, plugins):
     with_cmdb      = sum(1 for a in apps if a.get("cmdb_ci"))
 
     return {
-        "total":                n,
-        "with_lifecycle_pct":  st.pct(with_lifecycle, n),
+        "total":                    n,
+        "with_lifecycle_pct":       st.pct(with_lifecycle, n),
         "with_lifecycle_stage_pct": st.pct(with_stage, n),
-        "with_owner_pct":      st.pct(with_owner, n),
-        "with_cmdb_link_pct":  st.pct(with_cmdb, n),
-        "plugin_active":       plugins.get(_PLUGIN_MAP["apm"], False),
+        "with_owner_pct":           st.pct(with_owner, n),
+        "with_cmdb_link_pct":       st.pct(with_cmdb, n),
+        "plugin_active":            plugins.get(_PLUGIN_MAP["apm"], False),
         "footprint_status": {
             "total":     st.measured(n) if n else st.not_collected("apm_appl_now not collected"),
             "lifecycle": st.measured(st.pct(with_lifecycle, n)) if n else st.not_collected(),
@@ -322,13 +411,13 @@ def _innovation(buckets, plugins):
                            if challenges and n else None)
 
     return {
-        "total":                   n,
-        "challenge_count":         len(challenges),
-        "by_state":                by_state,
-        "no_owner_pct":            st.pct(no_owner, n),
+        "total":                          n,
+        "challenge_count":                len(challenges),
+        "by_state":                       by_state,
+        "no_owner_pct":                   st.pct(no_owner, n),
         "linked_to_demand_or_project_pct": st.pct(linked, n),
-        "ideas_per_challenge":     ideas_per_challenge,
-        "plugin_active":           plugins.get(_PLUGIN_MAP["innovation"], False),
+        "ideas_per_challenge":            ideas_per_challenge,
+        "plugin_active":                  plugins.get(_PLUGIN_MAP["innovation"], False),
         "footprint_status": {
             "ideas":      st.measured(n) if n else st.not_collected("innovation_idea not collected"),
             "challenges": st.measured(len(challenges)) if challenges
@@ -340,9 +429,7 @@ def _innovation(buckets, plugins):
 def _csdm(buckets):
     cis      = buckets.get("cmdb_ci") or []
     services = buckets.get("cmdb_ci_service") or []
-    # cmdb_rel_ci comes in as a sidecar-style dict via the collector output
     rel_raw  = buckets.get("cmdb_rel_ci") or []
-    # The collector prints a JSON object, not array — handle both
     if isinstance(rel_raw, list) and len(rel_raw) == 1 and isinstance(rel_raw[0], dict):
         rel_data = rel_raw[0]
     elif isinstance(rel_raw, dict):
@@ -357,19 +444,16 @@ def _csdm(buckets):
         v = r.get(field)
         return bool(v and str(v).strip() not in ("", "0", "null", "None"))
 
-    # Field completeness rates
     with_op_status   = sum(1 for r in cis if _has(r, "operational_status")) if n else 0
     with_owner       = sum(1 for r in cis if _has(r, "owned_by")) if n else 0
     with_managed_by  = sum(1 for r in cis if _has(r, "managed_by")) if n else 0
     with_support_grp = sum(1 for r in cis if _has(r, "support_group")) if n else 0
     with_environment = sum(1 for r in cis if _has(r, "environment")) if n else 0
 
-    # Discovery source — anything other than blank/"manual"/"Manual Input" counts as automated
     discovered = sum(1 for r in cis
                      if _has(r, "discovery_source") and
                      r.get("discovery_source", "").lower() not in ("manual", "manual input", "")) if n else 0
 
-    # Service classification breakdown
     biz_services  = sum(1 for s in services
                         if (s.get("service_classification") or "").lower() in
                            ("business service", "businessservice")) if nsv else 0
@@ -378,27 +462,74 @@ def _csdm(buckets):
                            ("technical service", "technicalservice")) if nsv else 0
     svc_with_owner = sum(1 for s in services if _has(s, "owned_by")) if nsv else 0
 
-    total_rels    = rel_data.get("total_relationships") or 0
+    total_rels      = rel_data.get("total_relationships") or 0
     sampled_parents = rel_data.get("sampled_parent_count") or 0
 
     return {
-        "total_ci":                   n,
-        "total_services":             nsv,
-        "business_service_count":     biz_services,
-        "technical_service_count":    tech_services,
-        "total_relationships":        total_rels,
+        "total_ci":                       n,
+        "total_services":                 nsv,
+        "business_service_count":         biz_services,
+        "technical_service_count":        tech_services,
+        "total_relationships":            total_rels,
         "ci_with_operational_status_pct": st.pct(with_op_status, n),
-        "ci_with_owner_pct":          st.pct(with_owner, n),
-        "ci_with_managed_by_pct":     st.pct(with_managed_by, n),
-        "ci_with_support_group_pct":  st.pct(with_support_grp, n),
-        "ci_with_environment_pct":    st.pct(with_environment, n),
-        "ci_discovered_pct":          st.pct(discovered, n),
-        "services_with_owner_pct":    st.pct(svc_with_owner, nsv),
-        "plugin_active":              n > 0,
+        "ci_with_owner_pct":              st.pct(with_owner, n),
+        "ci_with_managed_by_pct":         st.pct(with_managed_by, n),
+        "ci_with_support_group_pct":      st.pct(with_support_grp, n),
+        "ci_with_environment_pct":        st.pct(with_environment, n),
+        "ci_discovered_pct":              st.pct(discovered, n),
+        "services_with_owner_pct":        st.pct(svc_with_owner, nsv),
+        "plugin_active":                  n > 0,
         "footprint_status": {
             "ci_total":       st.measured(n) if n else st.not_collected("cmdb_ci not collected"),
             "services_total": st.measured(nsv) if nsv else st.not_collected("cmdb_ci_service not collected"),
             "relationships":  st.measured(total_rels) if total_rels else st.not_collected("cmdb_rel_ci not collected"),
+        },
+    }
+
+
+def _timesheet(buckets):
+    """Timesheet assessment module (item 12).
+
+    If the org has not configured timesheet periods, in_use=False and all
+    dimension scores return None — non-use is recorded, not penalised.
+    """
+    periods    = buckets.get("timesheet_period") or []
+    entries    = buckets.get("timesheet_entry") or []
+    plans      = buckets.get("pm_resource_plan") or []
+
+    n_periods  = len(periods)
+    n_entries  = len(entries)
+    in_use     = n_periods > 0
+
+    active_periods = sum(1 for p in periods
+                         if (p.get("state") or "").lower() in ("open", "active"))
+    closed_periods = sum(1 for p in periods
+                         if (p.get("state") or "").lower() in ("closed", "complete", "processed"))
+
+    entries_per_period = round(n_entries / n_periods, 1) if n_periods and n_entries else None
+
+    # Coverage: % of resource plans with at least one timesheet entry
+    plan_ids    = {p.get("sys_id") for p in plans}
+    ts_plan_ids = {t.get("timesheet") for t in entries}
+    resource_plan_coverage_pct = (
+        st.pct(len(plan_ids & ts_plan_ids), len(plan_ids))
+        if plan_ids and entries else None
+    )
+
+    return {
+        "in_use":                    in_use,
+        "total_periods":             n_periods,
+        "active_periods":            active_periods,
+        "closed_periods":            closed_periods,
+        "total_entries":             n_entries,
+        "entries_per_period":        entries_per_period,
+        "resource_plan_coverage_pct": resource_plan_coverage_pct,
+        "plugin_active":             in_use,
+        "footprint_status": {
+            "periods": st.measured(n_periods) if in_use
+                       else st.not_applicable("no timesheet periods configured"),
+            "entries": st.measured(n_entries) if in_use
+                       else st.not_applicable("timesheets not in use"),
         },
     }
 
@@ -418,18 +549,20 @@ def _governance(buckets):
     demand_approvals  = [a for a in approvals if a.get("source_table") == "pm_demand"]
     project_approvals = [a for a in approvals if a.get("source_table") == "pm_project"]
 
-    demand_with_approvals  = len({a.get("source_id") for a in demand_approvals})
-    project_with_approvals = len({a.get("source_id") for a in project_approvals})
+    demand_with_approvals  = len({_ref_id(a.get("document_id")) for a in demand_approvals
+                                  if _ref_id(a.get("document_id"))})
+    project_with_approvals = len({_ref_id(a.get("document_id")) for a in project_approvals
+                                  if _ref_id(a.get("document_id"))})
 
-    scored_ids = {s.get("source_id") for s in scores}
+    scored_ids   = {s.get("source_id") for s in scores}
     demand_scored = sum(1 for s in scores if s.get("source_table") == "pm_demand")
 
     return {
         "timesheets": {
-            "active_periods":       active_periods,
-            "total_entries":        len(ts_entries),
-            "entries_per_period":   entries_per_period,
-            "collected":            bool(ts_periods or ts_entries),
+            "active_periods":     active_periods,
+            "total_entries":      len(ts_entries),
+            "entries_per_period": entries_per_period,
+            "collected":          bool(ts_periods or ts_entries),
         },
         "approvals": {
             "demand_records_with_approvals":  demand_with_approvals,
@@ -437,14 +570,14 @@ def _governance(buckets):
             "collected":                      bool(approvals),
         },
         "status_reports": {
-            "total":      len(statuses),
-            "collected":  bool(statuses),
+            "total":     len(statuses),
+            "collected": bool(statuses),
         },
         "scoring_models": {
-            "criteria_count":     len(criteria),
-            "scored_records":     len(scored_ids),
-            "demand_scored":      demand_scored,
-            "collected":          bool(criteria or scores),
+            "criteria_count":  len(criteria),
+            "scored_records":  len(scored_ids),
+            "demand_scored":   demand_scored,
+            "collected":       bool(criteria or scores),
         },
     }
 
@@ -469,23 +602,24 @@ _MODULE_LABELS = {
     "apm":        "Application Portfolio",
     "innovation": "Innovation Management",
     "csdm":       "CSDM/CMDB Health",
+    "timesheet":  "Timesheet Management",
 }
 
 
 def _coverage_matrix(modules):
     rows = []
     for mod_key, mod_label in _MODULE_LABELS.items():
-        mod = modules[mod_key]
+        mod = modules.get(mod_key, {})
         for dim in _DIMENSIONS:
             status = "measured" if mod.get("plugin_active") is not None else "not_collected"
             rows.append({
-                "module":    mod_key,
+                "module":       mod_key,
                 "module_label": mod_label,
-                "dimension": dim,
-                "status":    status,
-                "value_token": None,
-                "rag":       None,
-                "note":      "",
+                "dimension":    dim,
+                "status":       status,
+                "value_token":  None,
+                "rag":          None,
+                "note":         "",
             })
     return rows
 
@@ -531,3 +665,10 @@ def _safe_float(val):
         return float(val) if val not in (None, "", "null") else None
     except (ValueError, TypeError):
         return None
+
+
+def _ref_id(field_val):
+    """Extract sys_id from a ServiceNow reference field (dict with 'value' key, or plain string)."""
+    if isinstance(field_val, dict):
+        return field_val.get("value") or None
+    return field_val or None

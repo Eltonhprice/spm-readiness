@@ -13,6 +13,7 @@ _MODULE_LABELS = {
     "apm":        "Application Portfolio Management",
     "innovation": "Innovation Management",
     "csdm":       "CSDM/CMDB Health",
+    "timesheet":  "Timesheet Management",
 }
 
 _DIMS = ["activation", "data_volume", "data_completeness", "process_adoption", "integration"]
@@ -124,10 +125,23 @@ def _module_section(mod_key, mod_label, metrics, scores):
 
     lines = [f"\n## {mod_label}\n", badge, "\n"]
 
+    # Timesheet module: short-circuit when not in use
+    if mod_key == "timesheet" and not mod.get("in_use"):
+        lines.append(
+            "> **Timesheets: Not in use.** No timesheet periods have been configured on this "
+            "instance. This is recorded as a capability gap, not scored as a defect. "
+            "If timesheets are used in a separate system, note that here.\n\n"
+        )
+        lines.append("\n**Key Observations** *(AI overlay — Stage 2)*\n\n")
+        lines.append("> *Three-beat observations to be added by Claude in the AI overlay step.*\n\n")
+        return "".join(lines)
+
+    _SKIP = {"footprint_status", "by_state", "stories_per_team_dist",
+             "cost_plan_by_type", "plugin_active", "in_use"}
+
     lines.append("| Metric | Value | Basis |\n|---|---|---|\n")
     for metric, val in mod.items():
-        if metric in ("footprint_status", "by_state", "stories_per_team_dist",
-                      "cost_plan_by_type", "plugin_active"):
+        if metric in _SKIP:
             continue
         if isinstance(val, dict):
             continue
@@ -145,68 +159,146 @@ def _module_section(mod_key, mod_label, metrics, scores):
 
 
 def _cross_module_integration(metrics):
-    mods = metrics.get("modules", {})
-    demand   = mods.get("demand", {})
-    resource = mods.get("resource", {})
+    mods      = metrics.get("modules", {})
+    demand    = mods.get("demand", {})
+    ppm       = mods.get("ppm", {})
+    resource  = mods.get("resource", {})
     financial = mods.get("financial", {})
-    apm = mods.get("apm", {})
+    apm       = mods.get("apm", {})
 
     rows = [
-        ("Demand → Project", demand.get("linked_to_project_pct")),
-        ("Project → Resource Plan", resource.get("linked_to_project_pct")),
+        ("Demand → Project",          demand.get("linked_to_project_pct")),
+        ("Demand → Portfolio",         demand.get("demand_with_portfolio_pct")),   # item 4
+        ("Demand → Program",           demand.get("demand_with_program_pct")),     # item 5
+        ("Project → Program",          ppm.get("with_program_pct")),              # item 6
+        ("Project → Resource Plan",    resource.get("linked_to_project_pct")),
         ("Project → Financial Record", financial.get("projects_with_financials_pct")),
-        ("APM → CMDB Service", apm.get("with_cmdb_link_pct")),
+        ("APM → CMDB Service",         apm.get("with_cmdb_link_pct")),
     ]
-    table = "| Integration Link | Coverage % |\n|---|---|\n"
+    table = "| Integration Link | Coverage % | Note |\n|---|---|---|\n"
     for label, val in rows:
         display = f"{val}%" if val is not None else "not_collected"
-        table += f"| {label} | {display} |\n"
+        note = ""
+        if label == "Demand → Portfolio" and val is None:
+            note = "portfolio field not in older collector — re-run pm_demand.js"
+        elif label == "Demand → Program" and val is None:
+            note = "program field not in older collector — re-run pm_demand.js"
+        table += f"| {label} | {display} | {note} |\n"
 
     return f"\n## Cross-Module Integration Analysis\n\n{table}\n---\n"
 
 
 def _governance_section(metrics):
-    gov = metrics.get("governance", {})
-    ts  = gov.get("timesheets", {})
-    app = gov.get("approvals", {})
-    sr  = gov.get("status_reports", {})
-    sm  = gov.get("scoring_models", {})
+    gov  = metrics.get("governance", {})
+    mods = metrics.get("modules", {})
+    pa   = metrics.get("pa_adoption", {})
+    ts   = gov.get("timesheets", {})
+    app  = gov.get("approvals", {})
+    sr   = gov.get("status_reports", {})
+    sm   = gov.get("scoring_models", {})
+    dem  = mods.get("demand", {})
 
-    table = "| Signal | Value | Collected |\n|---|---|---|\n"
-    rows = [
-        ("Active timesheet periods",         ts.get("active_periods"),   ts.get("collected")),
-        ("Timesheet entries total",           ts.get("total_entries"),    ts.get("collected")),
-        ("Demand records with approvals",     app.get("demand_records_with_approvals"), app.get("collected")),
-        ("Project records with approvals",    app.get("project_records_with_approvals"), app.get("collected")),
-        ("Total project status reports",      sr.get("total"),            sr.get("collected")),
-        ("Portfolio scoring criteria",        sm.get("criteria_count"),   sm.get("collected")),
-        ("Records with portfolio score",      sm.get("scored_records"),   sm.get("collected")),
-    ]
-    for label, val, collected in rows:
+    table = "| Signal | Value | Collected | Note |\n|---|---|---|---|\n"
+
+    def _row(label, val, collected, note=""):
         display = str(val) if val is not None else "—"
-        col_str = "Yes" if collected else "No"
-        table += f"| {label} | {display} | {col_str} |\n"
+        col_str = "Yes" if collected else ("No" if collected is False else "—")
+        return f"| {label} | {display} | {col_str} | {note} |\n"
+
+    # Demand governance signals (items 7, 8)
+    reviewed_pct = dem.get("demand_reviewed_14d_pct")
+    reviewed_note = ("Proxy for Demand Workbench activity — % of qualified/review-ready "
+                     "demands updated in last 14 days. Requires sys_updated_on in demand collector.")
+    table += _row("Demand workbench activity (14d review %)",
+                  f"{reviewed_pct}%" if reviewed_pct is not None else None,
+                  reviewed_pct is not None, reviewed_note)
+
+    table += _row("Demand records with approvals",
+                  app.get("demand_records_with_approvals"), app.get("collected"),
+                  "Formal approval records on demands")
+
+    # Resource governance signals (items 10, 11)
+    pa_scorecards = pa.get("scorecard_count")
+    table += _row("PA scorecards active",
+                  pa_scorecards, pa.get("collected"),
+                  "Indicator of Resource Mgmt Overview Dashboard and other PA dashboards in use. "
+                  "Note: aggregate count cannot confirm that every individual resource manager "
+                  "is performing reviews.")
+
+    # Project governance signals
+    table += _row("Project records with approvals",
+                  app.get("project_records_with_approvals"), app.get("collected"),
+                  "Formal approval records on projects")
+
+    table += _row("Total project status reports",
+                  sr.get("total"), sr.get("collected"),
+                  "Status reports filed in last period (active project coverage measured separately)")
+
+    # Timesheets
+    table += _row("Active timesheet periods",
+                  ts.get("active_periods"), ts.get("collected"),
+                  "See Timesheet Management module for full assessment")
+    table += _row("Timesheet entries total",
+                  ts.get("total_entries"), ts.get("collected"), "")
+
+    # Scoring models
+    table += _row("Portfolio scoring criteria",  sm.get("criteria_count"), sm.get("collected"), "")
+    table += _row("Records with portfolio score", sm.get("scored_records"), sm.get("collected"), "")
 
     return f"\n## Governance & Process Adoption\n\n{table}\n---\n"
 
 
 def _data_quality_section(metrics):
-    dq = metrics.get("data_quality", {})
-    lines = ["\n## Data Quality Flags\n\n"]
-    lines.append("> These counts are informational — they are not deducted from readiness scores.\n\n")
-    lines.append("| Indicator | Count | % of Total |\n|---|---|---|\n")
-    rows = [
-        ("Projects with no update in 90+ days",
-         dq.get("projects_stale_90d"), dq.get("projects_stale_90d_pct")),
-        ("Demands with no update in 90+ days",
-         dq.get("demands_stale_90d"), dq.get("demands_stale_90d_pct")),
-    ]
-    for label, count, pct in rows:
-        c = str(count) if count is not None else "—"
-        p = f"{pct}%" if pct is not None else "—"
-        lines.append(f"| {label} | {c} | {p} |\n")
+    dq   = metrics.get("data_quality", {})
+    mods = metrics.get("modules", {})
+
+    lines = ["\n## Staleness & Data Quality\n\n"]
+    lines.append(
+        "> Staleness counts are incorporated into module process-adoption scores. "
+        "Raw counts are shown here for reference. Thresholds differ by module type "
+        "to reflect realistic update cadences: projects 30 days, demands 60 days, "
+        "agile backlog 45 days, resource requests 30 days.\n\n"
+    )
+    lines.append("| Indicator | Count / % | Threshold | Scores Into |\n|---|---|---|---|\n")
+
+    def _stale_row(label, count, pct, threshold, scored_into):
+        c_str = str(count) if count is not None else "—"
+        p_str = f"{pct}%" if pct is not None else "—"
+        lines.append(f"| {label} | {c_str} ({p_str}) | {threshold} | {scored_into} |\n")
+
+    _stale_row(
+        "Projects with no update (active)",
+        dq.get("projects_stale_30d"), dq.get("projects_stale_30d_pct"),
+        "30 days", "PPM → Process Adoption"
+    )
+    _stale_row(
+        "Demands with no update (open)",
+        dq.get("demands_stale_60d"), dq.get("demands_stale_60d_pct"),
+        "60 days", "Demand → Process Adoption"
+    )
+
+    # Agile backlog staleness comes from the module metrics (Python-computed)
+    agile = mods.get("agile", {})
+    backlog_stale_pct = agile.get("backlog_stale_45d_pct")
+    lines.append(
+        f"| Backlog stories with no update | — ({_fmt_pct(backlog_stale_pct)}) "
+        f"| 45 days | Agile → Process Adoption |\n"
+    )
+
+    # Resource request staleness
+    resource = mods.get("resource", {})
+    rr_stale_pct = resource.get("resource_requests_stale_30d_pct")
+    lines.append(
+        f"| Open resource requests with no update | — ({_fmt_pct(rr_stale_pct)}) "
+        f"| 30 days | Resource → Process Adoption |\n"
+    )
+
     lines.append("\n---\n")
     return "".join(lines)
+
+
+def _fmt_pct(val):
+    return f"{val}%" if val is not None else "—"
 
 
 def _coverage_matrix_section(metrics):

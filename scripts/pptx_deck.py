@@ -362,24 +362,31 @@ def _fmt(val, is_pct=False, invert=False):
 # Key metric inputs per module: (row_label, metric_key, is_pct, invert, dimension_label)
 _MODULE_INPUTS = {
     "demand": [
-        ("Total demands",       "total",                    False, False, "Data Volume"),
-        ("Linked to project",   "linked_to_project_pct",    True,  False, "Integration"),
-        ("With approval",       "with_approval_pct",        True,  False, "Process Adoption"),
-        ("Priority set",        "demand_priority_set_pct",  True,  False, "Completeness"),
-        ("Has owner",           "no_owner_pct",             True,  True,  "Completeness"),
+        ("Total demands",           "total",                    False, False, "Data Volume"),
+        ("Linked to project",       "linked_to_project_pct",    True,  False, "Integration"),
+        ("Portfolio link",          "demand_with_portfolio_pct",True,  False, "Integration"),
+        ("Program link",            "demand_with_program_pct",  True,  False, "Integration"),
+        ("With approval",           "with_approval_pct",        True,  False, "Process Adoption"),
+        ("Lifecycle throughput",    "demand_throughput_pct",    True,  False, "Process Adoption"),
+        ("Workbench activity (14d)","demand_reviewed_14d_pct",  True,  False, "Process Adoption"),
+        ("Stale >60d",              "stale_60d_pct",            True,  True,  "Process Adoption"),
+        ("Priority set",            "demand_priority_set_pct",  True,  False, "Completeness"),
+        ("Has owner",               "no_owner_pct",             True,  True,  "Completeness"),
     ],
     "ppm": [
-        ("Total projects",      "total",                    False, False, "Data Volume"),
-        ("Shell projects",      "shell_project_pct",        True,  False, "Completeness"),
-        ("Has owner",           "no_owner_pct",             True,  True,  "Completeness"),
-        ("Grouped in program",  "with_program_pct",         True,  False, "Integration"),
-        ("With approval",       "with_approval_pct",        True,  False, "Process Adoption"),
+        ("Total projects",          "total",                    False, False, "Data Volume"),
+        ("Shell projects",          "shell_project_pct",        True,  False, "Completeness"),
+        ("Has owner",               "no_owner_pct",             True,  True,  "Completeness"),
+        ("Grouped in program",      "with_program_pct",         True,  False, "Integration"),
+        ("With approval",           "with_approval_pct",        True,  False, "Process Adoption"),
+        ("Stale >30d",              "stale_30d_pct",            True,  True,  "Process Adoption"),
     ],
     "resource": [
-        ("Total resource plans","total",                    False, False, "Data Volume"),
-        ("Named resource",      "resource_plan_named_pct",  True,  False, "Completeness"),
-        ("Linked to project",   "linked_to_project_pct",    True,  False, "Integration"),
-        ("Timesheet coverage",  "timesheet_coverage_pct",   True,  False, "Process Adoption"),
+        ("Total resource plans","total",                           False, False, "Data Volume"),
+        ("Named resource",      "resource_plan_named_pct",         True,  False, "Completeness"),
+        ("Linked to project",   "linked_to_project_pct",           True,  False, "Integration"),
+        ("Timesheet coverage",  "timesheet_coverage_pct",          True,  False, "Process Adoption"),
+        ("Req. stale >30d",     "resource_requests_stale_30d_pct", True,  True,  "Process Adoption"),
     ],
     "financial": [
         ("With financials",     "projects_with_financials_pct", True, False, "Integration"),
@@ -387,10 +394,11 @@ _MODULE_INPUTS = {
         ("With budget plan",    "projects_with_budget_plan_pct",True, False, "Completeness"),
     ],
     "agile": [
-        ("Total stories",       "total_stories",            False, False, "Data Volume"),
-        ("Stories with sprint", "no_sprint_pct",            True,  True,  "Completeness"),
-        ("Stories with team",   "no_team_pct",              True,  True,  "Completeness"),
-        ("Completed sprints",   "completed_sprint_count",   False, False, "Process Adoption"),
+        ("Total stories",           "total_stories",            False, False, "Data Volume"),
+        ("Stories with sprint",     "no_sprint_pct",            True,  True,  "Completeness"),
+        ("Stories with team",       "no_team_pct",              True,  True,  "Completeness"),
+        ("Completed sprints",       "completed_sprint_count",   False, False, "Process Adoption"),
+        ("Backlog stale >45d",      "backlog_stale_45d_pct",    True,  True,  "Process Adoption"),
     ],
     "apm": [
         ("Total applications",  "total",                    False, False, "Data Volume"),
@@ -491,21 +499,23 @@ def _slide_governance(prs, metrics, date, mode):
     _header_band(sl, "Governance & Process Adoption",
                  "Approval, timesheet, status reporting, and scoring model signals")
 
-    gov = metrics.get("governance", {})
-    ts  = gov.get("timesheets", {})
-    app = gov.get("approvals", {})
-    sr  = gov.get("status_reports", {})
-    sm  = gov.get("scoring_models", {})
+    gov   = metrics.get("governance", {})
+    ts    = gov.get("timesheets", {})
+    app   = gov.get("approvals", {})
+    sr    = gov.get("status_reports", {})
+    sm    = gov.get("scoring_models", {})
+    pa    = metrics.get("pa_adoption", {})
     roles = metrics.get("roles", {})
 
     signals = [
-        ("Active Timesheet Periods",     ts.get("active_periods"),                ts.get("collected")),
-        ("Timesheet Entries (total)",     ts.get("total_entries"),                 ts.get("collected")),
-        ("Demands with Approvals",        app.get("demand_records_with_approvals"), app.get("collected")),
-        ("Projects with Approvals",       app.get("project_records_with_approvals"),app.get("collected")),
-        ("Project Status Reports",        sr.get("total"),                         sr.get("collected")),
-        ("Portfolio Scoring Criteria",    sm.get("criteria_count"),                sm.get("collected")),
-        ("Records with Portfolio Score",  sm.get("scored_records"),                sm.get("collected")),
+        ("Active Timesheet Periods",                    ts.get("active_periods"),                 ts.get("collected")),
+        ("Timesheet Entries (total)",                   ts.get("total_entries"),                  ts.get("collected")),
+        ("Demands with Approvals",                      app.get("demand_records_with_approvals"),  app.get("collected")),
+        ("Projects with Approvals",                     app.get("project_records_with_approvals"), app.get("collected")),
+        ("Project Status Reports",                      sr.get("total"),                           sr.get("collected")),
+        ("PA Scorecards (Resource Mgmt Dashboard)*",    pa.get("scorecard_count"),                 pa.get("collected")),
+        ("Portfolio Scoring Criteria",                  sm.get("criteria_count"),                  sm.get("collected")),
+        ("Records with Portfolio Score",                sm.get("scored_records"),                  sm.get("collected")),
     ]
 
     col_w = [Inches(4.5), Inches(2.2), Inches(2.5)]
@@ -566,6 +576,86 @@ def _slide_governance(prs, metrics, date, mode):
         _txbox(sl, x1 + Inches(3.8), y, Inches(1.3), Inches(0.35),
                str(count) if count is not None else "—", size=13, bold=True,
                color=PURPLE, align=PP_ALIGN.RIGHT)
+
+    _txbox(sl, Inches(0.5), Inches(6.85), Inches(7.0), Inches(0.28),
+           "* PA Scorecards: Performance Analytics plugin required. Scorecard count is an aggregate signal — "
+           "it cannot confirm whether every individual resource manager is performing regular reviews.",
+           size=8, color=GREY_MID)
+
+    _footer(sl, date, mode)
+    return sl
+
+
+def _slide_staleness(prs, metrics, date, mode):
+    sl = _blank(prs)
+    _header_band(sl, "Staleness & Data Quality",
+                 "Records not updated within module threshold — incorporated into process-adoption scores")
+
+    dq    = metrics.get("data_quality", {})
+    agile = metrics.get("modules", {}).get("agile", {})
+    res   = metrics.get("modules", {}).get("resource", {})
+
+    rows = [
+        ("Projects not updated (active)",        dq.get("projects_stale_30d"),     dq.get("projects_stale_30d_pct"),     "30 days", "PPM → Process Adoption"),
+        ("Demands not updated (open)",            dq.get("demands_stale_60d"),      dq.get("demands_stale_60d_pct"),      "60 days", "Demand → Process Adoption"),
+        ("Backlog stories not updated",           None,                             agile.get("backlog_stale_45d_pct"),   "45 days", "Agile → Process Adoption"),
+        ("Open resource requests not updated",    None,                             res.get("resource_requests_stale_30d_pct"), "30 days", "Resource → Process Adoption"),
+    ]
+
+    col_w  = [Inches(3.6), Inches(1.2), Inches(1.4), Inches(1.4), Inches(3.4)]
+    hdrs   = ["Indicator", "Count", "% Stale", "Threshold", "Scores Into"]
+    row_h  = Inches(0.55)
+    x0, y0 = Inches(0.4), Inches(1.42)
+    total_w = sum(col_w)
+
+    tbl = sl.shapes.add_table(len(rows) + 1, 5, x0, y0,
+                               total_w, row_h * (len(rows) + 1)).table
+    for ci, (hdr, cw) in enumerate(zip(hdrs, col_w)):
+        tbl.columns[ci].width = cw
+        cell = tbl.cell(0, ci)
+        cell.text = hdr
+        cell.fill.solid(); cell.fill.fore_color.rgb = PURPLE
+        p = cell.text_frame.paragraphs[0]
+        p.alignment = PP_ALIGN.CENTER
+        run = p.runs[0] if p.runs else p.add_run()
+        run.font.size = Pt(10); run.font.bold = True; run.font.color.rgb = WHITE
+
+    for ri, (label, count, pct, threshold, scores_into) in enumerate(rows, start=1):
+        bg = GREY_LT if ri % 2 == 0 else WHITE
+        tbl.rows[ri].height = row_h
+        for ci in range(5):
+            tbl.cell(ri, ci).fill.solid()
+            tbl.cell(ri, ci).fill.fore_color.rgb = bg
+
+        count_str = str(count) if count is not None else "—"
+        pct_str   = f"{pct:.1f}%" if pct is not None else "—"
+
+        # RAG-colour the % cell: >50% stale = red, >20% = amber, else green
+        if pct is not None:
+            rag_col = RAG_RGB["red"] if pct > 50 else (RAG_RGB["amber"] if pct > 20 else RAG_RGB["green"])
+        else:
+            rag_col = RGBColor(0x9C, 0xA3, 0xAF)
+
+        vals = [label, count_str, pct_str, threshold, scores_into]
+        aligns = [PP_ALIGN.LEFT, PP_ALIGN.CENTER, PP_ALIGN.CENTER, PP_ALIGN.CENTER, PP_ALIGN.LEFT]
+        for ci, (v, al) in enumerate(zip(vals, aligns)):
+            cell = tbl.cell(ri, ci)
+            cell.text = v
+            p = cell.text_frame.paragraphs[0]
+            p.alignment = al
+            run = p.runs[0] if p.runs else p.add_run()
+            run.font.size = Pt(10)
+            run.font.color.rgb = DARK
+            if ci == 2 and pct is not None:   # % column — bold + rag fill
+                cell.fill.solid(); cell.fill.fore_color.rgb = rag_col
+                run.font.color.rgb = WHITE; run.font.bold = True
+
+    # Explanatory note below table
+    note_y = y0 + row_h * (len(rows) + 1) + Inches(0.2)
+    _txbox(sl, x0, note_y, total_w, Inches(0.5),
+           "Note: staleness percentages are incorporated into each module's process-adoption dimension score — "
+           "they are not reported as a standalone dimension. Thresholds reflect realistic update cadences per module type.",
+           size=8, color=GREY_TEXT, italic=True)
 
     _footer(sl, date, mode)
     return sl
@@ -1500,6 +1590,7 @@ def render_pptx(metrics, scores, findings, mode="rde"):
     _slide_scoring_basis(prs, metrics, scores, date, mode)
     _slide_scoring_basis_explainer(prs, metrics, scores, date, mode)
     _slide_governance(prs, metrics, date, mode)
+    _slide_staleness(prs, metrics, date, mode)
     _slide_findings(prs, findings, date, mode)
     _slide_next_steps(prs, mode, findings, date)
     _slide_summary(prs, metrics, scores, findings, overall, date, mode)

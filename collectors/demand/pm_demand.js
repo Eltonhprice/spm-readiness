@@ -5,7 +5,8 @@
   var FILTER     = "";
   var FIELDS     = [
     "sys_id", "short_description", "state", "category",
-    "assigned_to", "project", "sys_created_on", "priority",
+    "assigned_to", "project", "portfolio", "program",
+    "sys_created_on", "sys_updated_on", "priority",
     "business_justification", "requested_by"
   ];
 

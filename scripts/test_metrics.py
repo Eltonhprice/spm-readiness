@@ -70,7 +70,7 @@ def test_context_client():
 
 def test_coverage_matrix_length():
     m = compute_metrics(_minimal_buckets(), "test", "/tmp/test")
-    assert len(m["coverage_matrix"]) == 35
+    assert len(m["coverage_matrix"]) == 45  # 9 modules × 5 dimensions
 
 def test_roles_populated():
     m = compute_metrics(_minimal_buckets(), "test", "/tmp/test")

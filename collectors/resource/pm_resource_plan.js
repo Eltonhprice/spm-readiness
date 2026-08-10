@@ -6,7 +6,7 @@
   var FIELDS     = [
     "sys_id", "project", "resource", "role", "state",
     "planned_hours", "actual_hours", "available_hours",
-    "start_date", "end_date", "sys_created_on"
+    "start_date", "end_date", "sys_created_on", "sys_updated_on"
   ];
 
   var test = new GlideRecord(TABLE);
