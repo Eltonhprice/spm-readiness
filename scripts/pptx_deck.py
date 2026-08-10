@@ -362,7 +362,6 @@ def _fmt(val, is_pct=False, invert=False):
 # Key metric inputs per module: (row_label, metric_key, is_pct, invert, dimension_label)
 _MODULE_INPUTS = {
     "demand": [
-        ("Total demands",           "total",                    False, False, "Data Volume"),
         ("Linked to project",       "linked_to_project_pct",    True,  False, "Integration"),
         ("Portfolio link",          "demand_with_portfolio_pct",True,  False, "Integration"),
         ("Program link",            "demand_with_program_pct",  True,  False, "Integration"),
@@ -424,15 +423,18 @@ _MODULE_INPUTS = {
 }
 
 
-def _slide_scoring_basis(prs, metrics, scores, date, mode):
+def _slide_scoring_basis(prs, metrics, scores, date, mode,
+                         left_keys=None, right_keys=None, subtitle=None):
     sl = _blank(prs)
     _header_band(sl, "Scoring Basis",
-                 "Key metric inputs that drove each module's dimension scores")
+                 subtitle or "Key metric inputs that drove each module's dimension scores")
 
     mods = metrics.get("modules", {})
-    keys = list(_MODULE_LABELS.keys())
-    left_keys  = keys[:4]   # demand, ppm, resource, financial
-    right_keys = keys[4:]   # agile, apm, innovation, csdm
+    all_keys = list(_MODULE_LABELS.keys())
+    if left_keys is None:
+        left_keys  = all_keys[:4]
+    if right_keys is None:
+        right_keys = all_keys[4:]
 
     col_x     = [Inches(0.25), Inches(6.8)]
     col_w     = Inches(6.4)
@@ -1015,7 +1017,7 @@ def _slide_scoring_basis_explainer(prs, metrics, scores, date, mode):
     COL_A_X, COL_A_W = Inches(0.25), Inches(2.5)
     COL_B_X, COL_B_W = Inches(2.80), Inches(4.5)
     COL_C_X, COL_C_W = Inches(7.35), Inches(5.75)
-    row_h = Inches(1.12)
+    row_h = Inches(1.08)
     y0    = Inches(1.35)
 
     # Table header bar
@@ -1062,18 +1064,15 @@ def _slide_scoring_basis_explainer(prs, metrics, scores, date, mode):
         (
             "Data Volume", "20%",
             "How many records exist in the module's primary\n"
-            "table? If there are too few records, the module\n"
-            "cannot be meaningfully assessed.\n\n"
+            "table? If too few, the module cannot be assessed.\n\n"
             "Primary tables:\n"
             "  PPM → pm_project\n"
             "  Agile → rm_story\n"
             "  CSDM → cmdb_ci\n"
             "  Demand → pm_demand    (others similar)",
             [
-                (RAG_RGB["green"], f"≥ full threshold  →  100%"),
-                (None,             f"  {vol_green_ex}"),
-                (RAG_RGB["amber"], f"≥ partial threshold  →  60%"),
-                (None,             f"  {vol_amber_ex}"),
+                (RAG_RGB["green"], f"≥ full threshold  →  100%  ({vol_green_ex})"),
+                (RAG_RGB["amber"], f"≥ partial threshold  →  60%  ({vol_amber_ex})"),
                 (RAG_RGB["red"],   "≥ 1 record  →  20%"),
                 (RGBColor(0x9C,0xA3,0xAF), "0 records  →  Not Collected (—)"),
             ],
@@ -1087,16 +1086,13 @@ def _slide_scoring_basis_explainer(prs, metrics, scores, date, mode):
             "  PPM: owner, % complete, phase (shell check)\n"
             "  Agile: sprint assigned, team assigned\n"
             "  CSDM: op. status, owner, support group, env\n"
-            "  APM: lifecycle stage, owned_by\n"
-            "  Others: see Scoring Basis slide",
+            "  Others: see Scoring Basis slides",
             [
                 (None, "Score = average of field fill rates  (0–100%)"),
-                (None, ""),
-                (None, "Null fields are excluded — not counted as zero."),
-                (None, ""),
+                (None, "Null fields excluded — not counted as zero."),
                 (None, "Inverted fields: 100 − fill rate"),
-                (None, "  (used when lower value = better quality,"),
-                (None, "   e.g. shell-project % or no-owner %)"),
+                (None, "  (lower value = better, e.g. shell-project %,"),
+                (None, "   no-owner %, stale-record %)"),
             ],
         ),
         (
@@ -1105,20 +1101,16 @@ def _slide_scoring_basis_explainer(prs, metrics, scores, date, mode):
             "features — or is the plugin on but idle?\n\n"
             "Signals used by module:\n"
             "  PPM: status reports filed ≤30d + approval rate\n"
-            "  Agile: number of completed sprints\n"
-            "  Resource: timesheet entries logged\n"
+            "  Agile: completed sprints + backlog staleness\n"
+            "  Resource: timesheet entries + request staleness\n"
             "  Financial: project approvals logged\n"
-            "  Demand: approval rate + scoring model usage\n"
-            "  CSDM: % discovered CIs + % services with owner\n"
-            "  APM: not assessed (no standard signal)",
+            "  Demand: approval + workbench activity + throughput\n"
+            "  CSDM: % discovered CIs + % services with owner",
             [
-                (RAG_RGB["green"], "High activity  →  100%"),
-                (None,             "  >5 sprints · >200 timesheets · >10 approvals"),
-                (RAG_RGB["amber"], "Moderate activity  →  60%"),
-                (None,             "  >1 sprint · >50 timesheets · >2 approvals"),
+                (RAG_RGB["green"], "High activity  →  100%  (>5 sprints / >200 ts / >10 approvals)"),
+                (RAG_RGB["amber"], "Moderate  →  60%  (>1 sprint / >50 ts / >2 approvals)"),
                 (RAG_RGB["red"],   "Any activity  →  20%"),
-                (None,             ""),
-                (None,             "0 activity  =  0%  (NOT Not Collected)"),
+                (None,             "No activity  →  0%  (NOT Not Collected)"),
                 (None,             "Absence of process is a real finding."),
             ],
         ),
@@ -1128,20 +1120,17 @@ def _slide_scoring_basis_explainer(prs, metrics, scores, date, mode):
             "SPM modules, showing platform-wide usage?\n\n"
             "Linkage checked per module:\n"
             "  PPM: projects grouped under a program\n"
-            "  Demand: demands linked to a project\n"
+            "  Demand: linked to project / portfolio / program\n"
             "  Resource: resource plans linked to a project\n"
             "  Financial: projects with any financial record\n"
             "  Agile: stories assigned to a team\n"
-            "  APM: applications linked to a CMDB CI\n"
             "  CSDM: relationship density (rels ÷ CIs)",
             [
                 (None,             "Most modules: % of records with cross-module link"),
                 (None,             "  0% – 100%  (higher = better integrated)"),
-                (None,             ""),
-                (None,             "CSDM uses relationship density instead:"),
-                (RAG_RGB["green"], "≥ 2.0 relationships per CI  →  100%"),
-                (RAG_RGB["amber"], "≥ 0.5 relationships per CI  →  60%"),
-                (RAG_RGB["red"],   "< 0.5 relationships per CI  →  20%"),
+                (RAG_RGB["green"], "CSDM: ≥ 2.0 rels per CI  →  100%"),
+                (RAG_RGB["amber"], "CSDM: ≥ 0.5 rels per CI  →  60%"),
+                (RAG_RGB["red"],   "CSDM: < 0.5 rels per CI  →  20%"),
             ],
         ),
     ]
@@ -1587,7 +1576,14 @@ def render_pptx(metrics, scores, findings, mode="rde"):
     _slide_bar(prs, scores, overall, date, mode)
     _slide_scorecard(prs, scores, date, mode)
     _slide_scorecard_explainer(prs, metrics, scores, date, mode)
-    _slide_scoring_basis(prs, metrics, scores, date, mode)
+    _slide_scoring_basis(prs, metrics, scores, date, mode,
+                         left_keys=["demand", "ppm"],
+                         right_keys=["resource", "financial"],
+                         subtitle="Demand, PPM & Resource — key inputs driving each dimension score")
+    _slide_scoring_basis(prs, metrics, scores, date, mode,
+                         left_keys=["agile", "apm"],
+                         right_keys=["innovation", "csdm"],
+                         subtitle="Agile, APM, Innovation & CSDM — key inputs driving each dimension score")
     _slide_scoring_basis_explainer(prs, metrics, scores, date, mode)
     _slide_governance(prs, metrics, date, mode)
     _slide_staleness(prs, metrics, date, mode)
