@@ -1167,7 +1167,7 @@ def _slide_appendix_divider(prs, date, mode):
     _txbox(sl, Inches(1.0), Inches(2.8), Inches(11), Inches(1.2),
            "APPENDIX", size=48, bold=True, color=WHITE)
     _txbox(sl, Inches(1.0), Inches(4.1), Inches(11), Inches(0.5),
-           "Detailed Scoring Methodology & Calculation Examples",
+           "Executive Summary  ·  Scoring Methodology & Calculation Examples  ·  Source Tables",
            size=18, color=RGBColor(0xE9, 0xD5, 0xFF))
     # Footer without mode/date branding
     _txbox(sl, Inches(0.4), H - Inches(0.4), Inches(12), Inches(0.3),
@@ -1176,9 +1176,257 @@ def _slide_appendix_divider(prs, date, mode):
     return sl
 
 
+def _slide_appendix_exec_summary(prs, metrics, scores, findings, overall, date, mode):
+    sl = _blank(prs)
+    _header_band(sl, "Appendix A — Executive Summary",
+                 "Narrative overview of SPM readiness findings for this instance")
+
+    mods = metrics.get("modules", {})
+    ctx  = metrics.get("_context", {})
+    client = ctx.get("client", "Client")
+
+    # ── Score classification helpers ─────────────────────────────────────────
+    rag_o = _rag_label(overall)
+    col_o = RAG_RGB.get(rag_o, RGBColor(0x9C, 0xA3, 0xAF))
+
+    rag_counts = {"green": [], "amber": [], "red": [], "not_collected": []}
+    for k, label in _MODULE_LABELS.items():
+        r = scores.get(k, {}).get("rag", "not_collected")
+        rag_counts[r].append((k, label, scores.get(k, {}).get("module_score")))
+
+    active_count = sum(1 for k in _MODULE_LABELS if mods.get(k, {}).get("plugin_active"))
+
+    # ── Left panel: score tile + module breakdown ─────────────────────────────
+    panel_x, panel_w = Inches(0.3), Inches(3.6)
+    _rect(sl, panel_x, Inches(1.35), panel_w, Inches(5.7), fill=GREY_LT, line=GREY_MID)
+
+    _txbox(sl, panel_x + Inches(0.2), Inches(1.5), panel_w - Inches(0.3), Inches(0.28),
+           "OVERALL READINESS SCORE", size=8, bold=True, color=GREY_TEXT)
+    _txbox(sl, panel_x + Inches(0.15), Inches(1.75), panel_w - Inches(0.2), Inches(1.3),
+           f"{overall}%" if overall is not None else "—",
+           size=64, bold=True, color=col_o)
+
+    rag_label_map = {"green": "Green", "amber": "Amber", "red": "Red", "not_collected": "Not Collected"}
+    rag_col_map   = {"green": RAG_RGB["green"], "amber": RAG_RGB["amber"],
+                     "red": RAG_RGB["red"], "not_collected": RGBColor(0x9C, 0xA3, 0xAF)}
+    _txbox(sl, panel_x + Inches(0.2), Inches(3.05), panel_w - Inches(0.3), Inches(0.26),
+           "MODULE BREAKDOWN", size=8, bold=True, color=GREY_TEXT)
+    for i, r in enumerate(["green", "amber", "red", "not_collected"]):
+        items = rag_counts[r]
+        if not items:
+            continue
+        y = Inches(3.35) + i * Inches(0.58)
+        _rect(sl, panel_x + Inches(0.2), y + Inches(0.04), Inches(0.22), Inches(0.22),
+              fill=rag_col_map[r])
+        _txbox(sl, panel_x + Inches(0.52), y, Inches(1.5), Inches(0.30),
+               rag_label_map[r], size=9, color=DARK)
+        _txbox(sl, panel_x + Inches(2.7), y, Inches(0.7), Inches(0.30),
+               str(len(items)), size=12, bold=True, color=rag_col_map[r],
+               align=PP_ALIGN.RIGHT)
+
+    _txbox(sl, panel_x + Inches(0.2), Inches(5.75), panel_w - Inches(0.3), Inches(0.28),
+           f"{active_count} of {len(_MODULE_LABELS)} plugins active  ·  {date}",
+           size=8, color=GREY_TEXT, italic=True)
+
+    # ── Middle panel: strengths ───────────────────────────────────────────────
+    mid_x, mid_w = Inches(4.15), Inches(4.0)
+    _txbox(sl, mid_x, Inches(1.35), mid_w, Inches(0.28),
+           "STRENGTHS", size=9, bold=True, color=RAG_RGB["green"])
+    _rect(sl, mid_x, Inches(1.35), mid_w, Inches(0.04), fill=RAG_RGB["green"])
+
+    green_items = sorted(rag_counts["green"], key=lambda x: -(x[2] or 0))
+    _STRENGTH_NOTES = {
+        "ppm":        "Strong project portfolio with good completeness and approval coverage.",
+        "agile":      "Excellent sprint cadence and team structure — high process maturity.",
+        "apm":        "Application portfolio well-catalogued with lifecycle and owner data.",
+        "demand":     "Demand pipeline active with priority and linkage data in place.",
+        "timesheet":  "Timesheet periods configured and entries being logged regularly.",
+        "financial":  "Financial records linked to projects; cost and budget plans present.",
+        "resource":   "Resource plans created and linked; timesheet coverage established.",
+        "csdm":       "CMDB populated with CI and service records across the estate.",
+        "innovation": "Innovation management active with ideas and challenges tracked.",
+    }
+    y_s = Inches(1.48)
+    for k, label, ms in green_items[:4]:
+        score_str = f"{ms}%" if ms is not None else ""
+        _rect(sl, mid_x, y_s, mid_w, Inches(0.76), fill=GREY_LT, line=GREY_MID)
+        _rect(sl, mid_x, y_s, Inches(0.08), Inches(0.76), fill=RAG_RGB["green"])
+        _txbox(sl, mid_x + Inches(0.18), y_s + Inches(0.06),
+               mid_w - Inches(0.3), Inches(0.26),
+               f"{label}  —  {score_str}", size=9, bold=True,
+               color=RAG_RGB["green"])
+        _txbox(sl, mid_x + Inches(0.18), y_s + Inches(0.34),
+               mid_w - Inches(0.3), Inches(0.34),
+               _STRENGTH_NOTES.get(k, "Module is active and scoring well."),
+               size=8, color=GREY_TEXT)
+        y_s += Inches(0.84)
+
+    # ── Right panel: gaps + next steps ───────────────────────────────────────
+    right_x, right_w = Inches(8.35), Inches(4.75)
+    _txbox(sl, right_x, Inches(1.35), right_w, Inches(0.28),
+           "GAPS & PRIORITIES", size=9, bold=True, color=RAG_RGB["amber"])
+    _rect(sl, right_x, Inches(1.35), right_w, Inches(0.04), fill=RAG_RGB["amber"])
+
+    _GAP_NOTES = {
+        "resource":   "Resource plans lack named resource assignments; open requests aging without update.",
+        "csdm":       "CI records missing owner, support group, and environment fields — CMDB hygiene gap.",
+        "financial":  "Financial data coverage partial; cost and budget plans not linked to all projects.",
+        "demand":     "Demand governance mechanisms underutilised — approval workflow and scoring model low.",
+        "agile":      "Backlog staleness and unassigned stories reduce agile process confidence.",
+        "apm":        "Application lifecycle data incomplete; CMDB linkage below standard.",
+        "innovation": "Plugin not provisioned on this instance — Innovation Management not assessable.",
+        "ppm":        "Some projects lack program grouping; schedule variance data limited.",
+        "timesheet":  "Timesheet coverage of resource plans is low.",
+    }
+    gap_items = (
+        sorted(rag_counts["amber"], key=lambda x: x[2] or 0) +
+        rag_counts["red"] +
+        rag_counts["not_collected"]
+    )
+    y_g = Inches(1.48)
+    for k, label, ms in gap_items[:3]:
+        score_str = f"{ms}%" if ms is not None else "Not Collected"
+        rag_c = rag_col_map.get(scores.get(k, {}).get("rag", "not_collected"),
+                                RGBColor(0x9C, 0xA3, 0xAF))
+        _rect(sl, right_x, y_g, right_w, Inches(0.76), fill=GREY_LT, line=GREY_MID)
+        _rect(sl, right_x, y_g, Inches(0.08), Inches(0.76), fill=rag_c)
+        _txbox(sl, right_x + Inches(0.18), y_g + Inches(0.06),
+               right_w - Inches(0.3), Inches(0.26),
+               f"{label}  —  {score_str}", size=9, bold=True, color=rag_c)
+        _txbox(sl, right_x + Inches(0.18), y_g + Inches(0.34),
+               right_w - Inches(0.3), Inches(0.34),
+               _GAP_NOTES.get(k, "Module requires attention."),
+               size=8, color=GREY_TEXT)
+        y_g += Inches(0.84)
+
+    # Next steps block
+    _txbox(sl, right_x, Inches(4.2), right_w, Inches(0.28),
+           "RECOMMENDED NEXT STEPS", size=9, bold=True, color=PURPLE)
+    _rect(sl, right_x, Inches(4.48), right_w, Inches(0.04), fill=PURPLE)
+
+    # Derive next steps from top amber findings + not_collected
+    next_steps = []
+    for f in findings[:6]:
+        if f.get("rag") in ("amber", "red") and len(next_steps) < 3:
+            obs = f.get("observation", "")
+            mod = f.get("module_label", "")
+            next_steps.append(f"{mod}: {obs[:80]}{'…' if len(obs) > 80 else ''}")
+    if any(k == "innovation" for k, _, _ in rag_counts["not_collected"]):
+        next_steps.append("Innovation: Request Innovation Management plugin from ServiceNow account team.")
+    for i, step in enumerate(next_steps[:4]):
+        y_n = Inches(4.60) + i * Inches(0.60)
+        _rect(sl, right_x, y_n, right_w, Inches(0.52), fill=GREY_LT, line=GREY_MID)
+        _rect(sl, right_x, y_n, Inches(0.08), Inches(0.52), fill=PURPLE)
+        _txbox(sl, right_x + Inches(0.18), y_n + Inches(0.03),
+               Inches(0.26), Inches(0.26),
+               str(i + 1), size=9, bold=True, color=PURPLE, align=PP_ALIGN.CENTER)
+        _txbox(sl, right_x + Inches(0.50), y_n + Inches(0.06),
+               right_w - Inches(0.65), Inches(0.40),
+               step, size=8, color=DARK)
+
+    _footer(sl, date, mode)
+    return sl
+
+
+def _slide_appendix_findings_register(prs, findings, date, mode):
+    """Detailed findings register — all findings in a 2-column card layout."""
+    sl = _blank(prs)
+    _header_band(sl, "Appendix B — Findings Register",
+                 "All scored findings  ·  Red findings first, then Amber  ·  dimension score and business impact per entry")
+
+    _DIM_SHORT_MAP = {
+        "activation":        "Activation",
+        "data_volume":       "Data Volume",
+        "data_completeness": "Data Completeness",
+        "process_adoption":  "Process Adoption",
+        "integration":       "Integration",
+    }
+    _MOD_SHORT = {
+        "demand":     "Demand Mgmt",
+        "ppm":        "Project Portfolio",
+        "resource":   "Resource Mgmt",
+        "financial":  "Financial Mgmt",
+        "agile":      "Agile Development",
+        "apm":        "App Portfolio",
+        "innovation": "Innovation Mgmt",
+        "csdm":       "CSDM / CMDB",
+        "timesheet":  "Timesheet Mgmt",
+    }
+
+    # Sort: red first, then amber, within each group keep original order
+    sorted_findings = (
+        [f for f in findings if f.get("rag") == "red"] +
+        [f for f in findings if f.get("rag") == "amber"]
+    )
+
+    card_h  = Inches(0.80)
+    gap     = Inches(0.02)
+    y0      = Inches(1.38)
+    col_x   = [Inches(0.25), Inches(6.80)]
+    col_w   = Inches(6.40)
+    per_col = math.ceil(len(sorted_findings) / 2)
+
+    for idx, f in enumerate(sorted_findings):
+        col   = idx // per_col
+        row   = idx % per_col
+        x     = col_x[col] if col < 2 else col_x[1]
+        y     = y0 + row * (card_h + gap)
+
+        rag   = f.get("rag", "not_collected")
+        col_c = RAG_RGB.get(rag, RGBColor(0x9C, 0xA3, 0xAF))
+        bg    = GREY_LT if row % 2 == 0 else WHITE
+
+        # Card background
+        _rect(sl, x, y, col_w, card_h, fill=bg, line=GREY_MID)
+        # RAG accent bar (left edge)
+        _rect(sl, x, y, Inches(0.10), card_h, fill=col_c)
+
+        # Finding ID chip
+        _rect(sl, x + Inches(0.18), y + Inches(0.08),
+              Inches(0.62), Inches(0.22), fill=col_c)
+        _txbox(sl, x + Inches(0.18), y + Inches(0.09),
+               Inches(0.62), Inches(0.20),
+               f.get("id", ""), size=7, bold=True, color=WHITE,
+               align=PP_ALIGN.CENTER)
+
+        # Module + Dimension line
+        mod_short = _MOD_SHORT.get(f.get("module", ""), f.get("module_label", ""))
+        dim_short = _DIM_SHORT_MAP.get(f.get("dimension", ""), f.get("dimension", "").title())
+        _txbox(sl, x + Inches(0.88), y + Inches(0.07),
+               col_w - Inches(1.0), Inches(0.22),
+               f"{mod_short}  ·  {dim_short}", size=8, bold=True, color=DARK)
+
+        # Observation (truncated to fit)
+        obs = f.get("observation", "")
+        if len(obs) > 90:
+            obs = obs[:88] + "…"
+        _txbox(sl, x + Inches(0.88), y + Inches(0.30),
+               col_w - Inches(1.0), Inches(0.24),
+               obs, size=8, color=DARK)
+
+        # Significance (italic, grey)
+        sig = f.get("significance", "")
+        if len(sig) > 95:
+            sig = sig[:93] + "…"
+        _txbox(sl, x + Inches(0.88), y + Inches(0.54),
+               col_w - Inches(1.0), Inches(0.22),
+               sig, size=7, italic=True, color=GREY_TEXT)
+
+    # Count summary at bottom
+    red_count   = sum(1 for f in findings if f.get("rag") == "red")
+    amber_count = sum(1 for f in findings if f.get("rag") == "amber")
+    _txbox(sl, Inches(0.25), Inches(7.08), Inches(12.85), Inches(0.22),
+           f"{len(findings)} findings total  ·  {red_count} Red  ·  {amber_count} Amber  "
+           "·  Green dimensions are not listed (only gaps are reported)",
+           size=7, color=GREY_TEXT, italic=True)
+
+    _footer(sl, date, mode)
+    return sl
+
+
 def _slide_appendix_methodology(prs, date, mode):
     sl = _blank(prs)
-    _header_band(sl, "Appendix A — Scoring Methodology",
+    _header_band(sl, "Appendix C — Scoring Methodology",
                  "Complete reference: formula, weights, thresholds, and not-collected rules")
 
     # ── Section 1: Formula ────────────────────────────────────────────────────
@@ -1250,7 +1498,7 @@ def _slide_appendix_methodology(prs, date, mode):
 def _slide_appendix_example(prs, metrics, scores, date, mode):
     """Walk through one fully-scored and one partially-scored module as a worked example."""
     sl = _blank(prs)
-    _header_band(sl, "Appendix B — Worked Calculation Examples",
+    _header_band(sl, "Appendix D — Worked Calculation Examples",
                  "Step-by-step derivation of module scores from raw metrics")
 
     mods = metrics.get("modules", {})
@@ -1376,7 +1624,7 @@ def _raw_input_desc(mod_key, dim_key, mod, score):
 
 def _slide_appendix_tables(prs, date, mode):
     sl = _blank(prs)
-    _header_band(sl, "Appendix C — Source Tables",
+    _header_band(sl, "Appendix E — Source Tables",
                  "All ServiceNow tables queried during this assessment, grouped by module")
 
     _GREY_NC = RGBColor(0x9C, 0xA3, 0xAF)
@@ -1591,6 +1839,8 @@ def render_pptx(metrics, scores, findings, mode="rde"):
     _slide_next_steps(prs, mode, findings, date)
     _slide_summary(prs, metrics, scores, findings, overall, date, mode)
     _slide_appendix_divider(prs, date, mode)
+    _slide_appendix_exec_summary(prs, metrics, scores, findings, overall, date, mode)
+    _slide_appendix_findings_register(prs, findings, date, mode)
     _slide_appendix_methodology(prs, date, mode)
     _slide_appendix_example(prs, metrics, scores, date, mode)
     _slide_appendix_tables(prs, date, mode)
