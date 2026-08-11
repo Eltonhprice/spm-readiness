@@ -21,12 +21,15 @@ from pptx.enum.text import PP_ALIGN
 from scripts.scoring import overall_score as _overall_score
 
 # ── Palette ────────────────────────────────────────────────────────────────────
-PURPLE    = RGBColor(0xA1, 0x00, 0xFF)
+PURPLE    = RGBColor(0xA1, 0x00, 0xFF)   # Accenture purple #A100FF
 WHITE     = RGBColor(0xFF, 0xFF, 0xFF)
-DARK      = RGBColor(0x1A, 0x1A, 0x1A)
-GREY_LT   = RGBColor(0xF9, 0xF5, 0xFF)
-GREY_MID  = RGBColor(0xE9, 0xD5, 0xFF)
-GREY_TEXT = RGBColor(0x66, 0x66, 0x66)
+DARK      = RGBColor(0x00, 0x00, 0x00)   # Accenture true black
+GREY_LT   = RGBColor(0xF2, 0xF2, 0xF2)  # Accenture neutral light grey
+GREY_MID  = RGBColor(0xD9, 0xD9, 0xD9)  # Accenture border grey
+GREY_TEXT = RGBColor(0x59, 0x59, 0x59)  # Accenture secondary text
+
+# ── Typography ─────────────────────────────────────────────────────────────────
+_FONT = "Graphik"                        # Accenture brand font
 
 RAG_RGB = {
     "green":         RGBColor(0x22, 0xC5, 0x5E),
@@ -102,6 +105,7 @@ def _txbox(slide, x, y, w, h, text, size=12, bold=False, color=None,
     p.alignment = align
     run = p.add_run()
     run.text = text
+    run.font.name = _FONT
     run.font.size = Pt(size)
     run.font.bold = bold
     run.font.italic = italic
@@ -125,15 +129,15 @@ def _header_band(slide, title, subtitle=""):
            title, size=24, bold=True, color=WHITE)
     if subtitle:
         _txbox(slide, Inches(0.4), Inches(0.7), Inches(12.5), Inches(0.4),
-               subtitle, size=12, color=RGBColor(0xE9, 0xD5, 0xFF))
+               subtitle, size=12, color=RGBColor(0xCC, 0xCC, 0xCC))
 
 
 def _footer(slide, date="", mode="rde"):
     y = H - Inches(0.35)
     _rect(slide, 0, y, W, Inches(0.35), fill=PURPLE)
-    label = f"Accenture  ·{mode.upper()}  ·  SPM Readiness Assessment  ·  {date}"
+    label = f"Accenture  ·  {mode.upper()}  ·  SPM Readiness Assessment  ·  {date}"
     _txbox(slide, Inches(0.4), y + Inches(0.05), Inches(12), Inches(0.25),
-           label, size=9, color=RGBColor(0xE9, 0xD5, 0xFF))
+           label, size=9, color=WHITE)
 
 
 # ── Radar chart (matplotlib → PNG → embed) ────────────────────────────────────
@@ -275,42 +279,52 @@ def _slide_intro_benefits(prs, date, mode):
 
 def _slide_cover(prs, client, date, overall, mode):
     sl = _blank(prs)
-    # Purple left accent bar
+
+    # ── Accenture structural marks ─────────────────────────────────────────────
+    # Left purple accent bar
     _rect(sl, 0, 0, Inches(0.18), H, fill=PURPLE)
     # Top accent line
     _rect(sl, Inches(0.18), 0, W - Inches(0.18), Inches(0.08), fill=PURPLE)
+    # Bottom accent line (above footer)
+    _rect(sl, Inches(0.18), H - Inches(0.43), W - Inches(0.18), Inches(0.03),
+          fill=GREY_MID)
 
-    # Badge
-    _txbox(sl, Inches(0.5), Inches(0.35), Inches(12), Inches(0.4),
-           f"ACCENTURE  ·  {mode.upper()}  ·  SPM READINESS ASSESSMENT  ·  AS-IS",
+    # ── Accenture wordmark block (top-right) ───────────────────────────────────
+    # ">" chevron — Accenture's iconic logo mark
+    _txbox(sl, Inches(11.5), Inches(0.18), Inches(0.55), Inches(0.6),
+           ">", size=28, bold=True, color=PURPLE)
+    _txbox(sl, Inches(11.95), Inches(0.22), Inches(1.3), Inches(0.5),
+           "Accenture", size=18, bold=True, color=DARK)
+
+    # ── Engagement badge ───────────────────────────────────────────────────────
+    _txbox(sl, Inches(0.5), Inches(0.35), Inches(10.5), Inches(0.4),
+           f"{mode.upper()}  ·  SPM READINESS ASSESSMENT  ·  AS-IS",
            size=9, bold=True, color=PURPLE)
 
-    # Client name
+    # ── Client name ────────────────────────────────────────────────────────────
     _txbox(sl, Inches(0.5), Inches(0.8), Inches(10), Inches(1.0),
            client, size=36, bold=True, color=DARK)
 
-    # Date
+    # ── Date ───────────────────────────────────────────────────────────────────
     _txbox(sl, Inches(0.5), Inches(1.8), Inches(6), Inches(0.4),
            date, size=13, color=GREY_TEXT)
 
-    # Score label
+    # ── Score panel ────────────────────────────────────────────────────────────
     _txbox(sl, Inches(0.5), Inches(2.6), Inches(6), Inches(0.4),
-           "OVERALL SPM READINESS SCORE", size=10, bold=True,
-           color=GREY_TEXT)
+           "OVERALL SPM READINESS SCORE", size=10, bold=True, color=GREY_TEXT)
 
-    # Big score
     rag = _rag_label(overall)
     score_str = f"{overall}%" if overall is not None else "—"
     _txbox(sl, Inches(0.45), Inches(2.9), Inches(6), Inches(2.2),
            score_str, size=96, bold=True,
            color=RAG_RGB.get(rag, RGBColor(0x9C, 0xA3, 0xAF)))
 
-    # RAG legend
+    # ── RAG legend ─────────────────────────────────────────────────────────────
     legend = "Green ≥ 70%  ·  Amber 40–69%  ·  Red < 40%"
     _txbox(sl, Inches(0.5), Inches(5.4), Inches(8), Inches(0.4),
            legend, size=10, color=GREY_TEXT)
 
-    # Footer bar
+    # ── Footer bar ─────────────────────────────────────────────────────────────
     _footer(sl, date, mode)
     return sl
 
@@ -691,7 +705,7 @@ def _slide_governance(prs, metrics, date, mode):
     _txbox(sl, Inches(0.5), Inches(6.85), Inches(7.0), Inches(0.28),
            "* PA Scorecards: Performance Analytics plugin required. Scorecard count is an aggregate signal — "
            "it cannot confirm whether every individual resource manager is performing regular reviews.",
-           size=8, color=GREY_MID)
+           size=8, color=GREY_TEXT)
 
     _footer(sl, date, mode)
     return sl
@@ -1978,9 +1992,26 @@ def render_pptx(metrics, scores, findings, mode="rde"):
     return prs
 
 
+def _apply_brand_font(prs):
+    """Walk every text run in the deck and stamp the Accenture brand font."""
+    for slide in prs.slides:
+        for shape in slide.shapes:
+            if shape.has_text_frame:
+                for para in shape.text_frame.paragraphs:
+                    for run in para.runs:
+                        run.font.name = _FONT
+            if hasattr(shape, "table"):
+                for row in shape.table.rows:
+                    for cell in row.cells:
+                        for para in cell.text_frame.paragraphs:
+                            for run in para.runs:
+                                run.font.name = _FONT
+
+
 def write_pptx(metrics, scores, findings, out_dir, mode="rde"):
     os.makedirs(out_dir, exist_ok=True)
     prs  = render_pptx(metrics, scores, findings, mode=mode)
+    _apply_brand_font(prs)
     path = os.path.join(out_dir, "spm-leadership-deck.pptx")
     prs.save(path)
     return path
