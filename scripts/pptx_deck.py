@@ -176,6 +176,103 @@ def _radar_png(labels, values, colors, size_px=480):
 
 
 # ── Slides ────────────────────────────────────────────────────────────────────
+def _slide_intro_benefits(prs, date, mode):
+    sl = _blank(prs)
+    _header_band(sl, "ServiceNow Strategic Portfolio Management",
+                 "Why SPM?  ·  The business case for a unified portfolio management platform")
+
+    # Intro sentence
+    _txbox(sl, Inches(0.3), Inches(1.28), Inches(12.73), Inches(0.26),
+           "ServiceNow SPM connects strategy to execution — giving leadership a single, "
+           "governed view of demand, investment, delivery, and outcomes across the enterprise.",
+           size=10, color=GREY_TEXT, italic=True)
+
+    # ── 6 benefit tiles: 3 columns × 2 rows ──────────────────────────────────
+    benefits = [
+        (
+            "1",
+            "Unified Demand Management",
+            "Capture every IT and business demand in one governed pipeline. "
+            "Prioritise against strategic objectives before work begins — "
+            "eliminating shadow IT and untracked spend.",
+        ),
+        (
+            "2",
+            "Real-Time Portfolio Visibility",
+            "A live view of all projects, programmes, and investments aligned "
+            "to business strategy. Leadership can redirect spend and resources "
+            "without waiting for monthly status decks.",
+        ),
+        (
+            "3",
+            "Resource Optimisation",
+            "Match demand to capacity across every team. Identify "
+            "over-allocation, skill gaps, and idle capacity before "
+            "they become delivery risks or attrition drivers.",
+        ),
+        (
+            "4",
+            "Financial Governance",
+            "Track budgets, cost plans, and actuals against every project "
+            "and portfolio in one place. Variance is visible in real time — "
+            "not discovered at quarter close.",
+        ),
+        (
+            "5",
+            "Agile at Scale",
+            "Connect strategic priorities to agile delivery teams. Measure "
+            "velocity, throughput, and sprint cadence end-to-end — bridging "
+            "the gap between portfolio planning and squad execution.",
+        ),
+        (
+            "6",
+            "Data-Driven Decisions",
+            "Performance Analytics scorecards and dashboards surface "
+            "actionable insights without spreadsheet overhead. "
+            "Leaders act on facts, not on whoever updated their deck last.",
+        ),
+    ]
+
+    tile_w  = Inches(4.22)
+    tile_h  = Inches(2.28)
+    col_xs  = [Inches(0.25), Inches(4.56), Inches(8.87)]
+    row_ys  = [Inches(1.60), Inches(3.96)]
+    gap_col = Inches(0.09)
+
+    for i, (num, title, desc) in enumerate(benefits):
+        col = i % 3
+        row = i // 3
+        x   = col_xs[col]
+        y   = row_ys[row]
+
+        # Tile background
+        _rect(sl, x, y, tile_w, tile_h, fill=GREY_LT, line=GREY_MID)
+        # Purple top accent bar
+        _rect(sl, x, y, tile_w, Inches(0.08), fill=PURPLE)
+        # Purple left accent bar
+        _rect(sl, x, y + Inches(0.08), Inches(0.08), tile_h - Inches(0.08), fill=PURPLE)
+
+        # Number badge
+        _rect(sl, x + Inches(0.18), y + Inches(0.18),
+              Inches(0.38), Inches(0.38), fill=PURPLE)
+        _txbox(sl, x + Inches(0.18), y + Inches(0.19),
+               Inches(0.38), Inches(0.30),
+               num, size=14, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+
+        # Benefit title
+        _txbox(sl, x + Inches(0.68), y + Inches(0.20),
+               tile_w - Inches(0.80), Inches(0.34),
+               title, size=11, bold=True, color=PURPLE)
+
+        # Description
+        _txbox(sl, x + Inches(0.18), y + Inches(0.62),
+               tile_w - Inches(0.30), tile_h - Inches(0.75),
+               desc, size=9, color=DARK)
+
+    _footer(sl, date, mode)
+    return sl
+
+
 def _slide_cover(prs, client, date, overall, mode):
     sl = _blank(prs)
     # Purple left accent bar
@@ -1821,6 +1918,7 @@ def render_pptx(metrics, scores, findings, mode="rde"):
 
     prs = _prs()
     _slide_cover(prs, client, date, overall, mode)
+    _slide_intro_benefits(prs, date, mode)
     _slide_bar(prs, scores, overall, date, mode)
     _slide_scorecard(prs, scores, date, mode)
     _slide_scorecard_explainer(prs, metrics, scores, date, mode)
