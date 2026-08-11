@@ -606,15 +606,22 @@ def _slide_governance(prs, metrics, date, mode):
     pa    = metrics.get("pa_adoption", {})
     roles = metrics.get("roles", {})
 
+    workspace_active = metrics.get("spm_workspace_active")
+
+    # Each signal: (label, val, flag, override)
+    # override=None → "Collected"/"Not collected" (grey when false)
+    # override=(active_txt, inactive_txt, inactive_color) → custom status chip
+    _AMBER = RAG_RGB["amber"]
     signals = [
-        ("Active Timesheet Periods",                    ts.get("active_periods"),                 ts.get("collected")),
-        ("Timesheet Entries (total)",                   ts.get("total_entries"),                  ts.get("collected")),
-        ("Demands with Approvals",                      app.get("demand_records_with_approvals"),  app.get("collected")),
-        ("Projects with Approvals",                     app.get("project_records_with_approvals"), app.get("collected")),
-        ("Project Status Reports",                      sr.get("total"),                           sr.get("collected")),
-        ("PA Scorecards (Resource Mgmt Dashboard)*",    pa.get("scorecard_count"),                 pa.get("collected")),
-        ("Portfolio Scoring Criteria",                  sm.get("criteria_count"),                  sm.get("collected")),
-        ("Records with Portfolio Score",                sm.get("scored_records"),                  sm.get("collected")),
+        ("Active Timesheet Periods",                    ts.get("active_periods"),                 ts.get("collected"),  None),
+        ("Timesheet Entries (total)",                   ts.get("total_entries"),                  ts.get("collected"),  None),
+        ("Demands with Approvals",                      app.get("demand_records_with_approvals"),  app.get("collected"), None),
+        ("Projects with Approvals",                     app.get("project_records_with_approvals"), app.get("collected"), None),
+        ("Project Status Reports",                      sr.get("total"),                           sr.get("collected"),  None),
+        ("PA Scorecards (Resource Mgmt Dashboard)*",    pa.get("scorecard_count"),                 pa.get("collected"),  None),
+        ("Portfolio Scoring Criteria",                  sm.get("criteria_count"),                  sm.get("collected"),  None),
+        ("Records with Portfolio Score",                sm.get("scored_records"),                  sm.get("collected"),  None),
+        ("SPM Workspace Active",                        None,                                      workspace_active,     ("Active", "Inactive", _AMBER)),
     ]
 
     col_w = [Inches(4.5), Inches(2.2), Inches(2.5)]
@@ -632,7 +639,7 @@ def _slide_governance(prs, metrics, date, mode):
         run = p.runs[0] if p.runs else p.add_run()
         run.font.size = Pt(10); run.font.bold = True; run.font.color.rgb = WHITE
 
-    for ri, (label, val, collected) in enumerate(signals, start=1):
+    for ri, (label, val, flag, override) in enumerate(signals, start=1):
         bg = GREY_LT if ri % 2 == 0 else WHITE
         tbl.rows[ri].height = row_h
         for ci in range(3):
@@ -641,8 +648,13 @@ def _slide_governance(prs, metrics, date, mode):
         tbl.cell(ri, 0).text = label
         tbl.cell(ri, 1).text = str(val) if val is not None else "—"
         tbl.cell(ri, 1).text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
-        status_txt = "Collected" if collected else "Not collected"
-        status_col = RAG_RGB["green"] if collected else RGBColor(0x9C, 0xA3, 0xAF)
+        if override:
+            active_txt, inactive_txt, inactive_col = override
+            status_txt = active_txt if flag else inactive_txt
+            status_col = RAG_RGB["green"] if flag else inactive_col
+        else:
+            status_txt = "Collected" if flag else "Not collected"
+            status_col = RAG_RGB["green"] if flag else RGBColor(0x9C, 0xA3, 0xAF)
         status_cell = tbl.cell(ri, 2)
         status_cell.fill.solid(); status_cell.fill.fore_color.rgb = status_col
         status_cell.text = status_txt

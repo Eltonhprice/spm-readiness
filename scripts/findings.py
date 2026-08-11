@@ -90,6 +90,23 @@ def generate_findings(metrics, scores):
                         "significance": sig,
                     })
 
+    if metrics.get("spm_workspace_active") is False:
+        findings.append({
+            "module":       "demand",
+            "module_label": _MODULE_LABELS["demand"],
+            "dimension":    "process_adoption",
+            "rag":          "amber",
+            "observation":  (
+                "SPM Workspace is not activated — portfolio managers and demand managers are "
+                "operating in classic views, limiting adoption and governance visibility."
+            ),
+            "significance": (
+                "The SPM Workspace is the primary interface for demand intake, portfolio "
+                "scoring, and workbench-driven governance; without it, process maturity and "
+                "user adoption are significantly constrained."
+            ),
+        })
+
     for i, f in enumerate(findings, 1):
         f["id"] = f"SPM-{i:03d}"
 
