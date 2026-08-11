@@ -1401,15 +1401,36 @@ def _slide_appendix_exec_summary(prs, metrics, scores, findings, overall, date, 
            "RECOMMENDED NEXT STEPS", size=9, bold=True, color=PURPLE)
     _rect(sl, right_x, Inches(4.48), right_w, Inches(0.04), fill=PURPLE)
 
-    # Derive next steps from top amber findings + not_collected
+    # Actionable next steps keyed by (module, dimension)
+    _ACTIONS = {
+        ("demand",    "process_adoption"):  "Activate demand approval workflows and portfolio scoring models to strengthen pipeline governance.",
+        ("demand",    "integration"):       "Link open demands to projects and portfolios to enable end-to-end delivery traceability.",
+        ("demand",    "data_completeness"): "Set priority and assign owners on all open demand records to improve prioritisation signal.",
+        ("ppm",       "process_adoption"):  "Ensure active projects file status reports monthly and pass through approval workflows.",
+        ("ppm",       "integration"):       "Group ungrouped projects under programs to enable portfolio-level planning and reporting.",
+        ("ppm",       "data_completeness"): "Populate owner and completion data on shell projects or archive records no longer in use.",
+        ("resource",  "data_completeness"): "Assign named resources to open resource plans to improve capacity planning accuracy.",
+        ("resource",  "process_adoption"):  "Increase timesheet adoption so actual effort is captured against resource plans.",
+        ("financial", "data_completeness"): "Attach cost and budget plans to all active projects to enable financial governance reporting.",
+        ("financial", "process_adoption"):  "Route project financial approvals through the platform — currently bypassed.",
+        ("agile",     "process_adoption"):  "Address backlog hygiene — close or groom stories older than 45 days to improve signal quality.",
+        ("agile",     "data_completeness"): "Assign sprint and team to unlinked stories so velocity and throughput can be measured.",
+        ("apm",       "data_completeness"): "Populate lifecycle stage and business owner on all application records.",
+        ("apm",       "integration"):       "Link applications to CMDB configuration items to enable impact analysis.",
+        ("csdm",      "data_completeness"): "Enrich CI records with owner, support group, and environment fields to improve CMDB reliability.",
+        ("csdm",      "process_adoption"):  "Increase automated CI discovery to reduce manual CMDB maintenance and staleness risk.",
+        ("csdm",      "integration"):       "Map CI relationships to reach at least 0.5 relationships per CI for service dependency visibility.",
+        ("timesheet", "integration"):       "Link timesheet entries to resource plans so effort is traceable back to project delivery.",
+    }
     next_steps = []
-    for f in findings[:6]:
+    for f in findings[:8]:
         if f.get("rag") in ("amber", "red") and len(next_steps) < 3:
-            obs = f.get("observation", "")
-            mod = f.get("module_label", "")
-            next_steps.append(f"{mod}: {obs[:80]}{'…' if len(obs) > 80 else ''}")
+            key = (f.get("module"), f.get("dimension"))
+            action = _ACTIONS.get(key)
+            if action:
+                next_steps.append(action)
     if any(k == "innovation" for k, _, _ in rag_counts["not_collected"]):
-        next_steps.append("Innovation: Request Innovation Management plugin from ServiceNow account team.")
+        next_steps.append("Request the Innovation Management plugin from your ServiceNow account team to activate the module.")
     for i, step in enumerate(next_steps[:4]):
         y_n = Inches(4.60) + i * Inches(0.60)
         _rect(sl, right_x, y_n, right_w, Inches(0.52), fill=GREY_LT, line=GREY_MID)
