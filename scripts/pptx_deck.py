@@ -1025,19 +1025,20 @@ def _slide_scorecard_explainer(prs, metrics, scores, date, mode):
         ("Process Adoption",  0.25, "Governance mechanisms actively used"),
         ("Integration",       0.10, "Records linked across SPM modules"),
     ]
-    bar_max = Inches(2.6)
+    bar_x   = Inches(9.9)
+    bar_max = Inches(2.85)   # ends at 12.75" — within 13.2" panel edge
     for i, (dim, w, desc) in enumerate(dims_w):
         y = Inches(1.64) + i * Inches(0.50)
         _rect(sl, Inches(6.3), y, Inches(6.9), Inches(0.40), fill=GREY_LT)
         _txbox(sl, Inches(6.42), y + Inches(0.04), Inches(1.9), Inches(0.20),
                dim, size=9, bold=True, color=DARK)
-        _txbox(sl, Inches(6.42), y + Inches(0.22), Inches(4.2), Inches(0.16),
+        _txbox(sl, Inches(6.42), y + Inches(0.22), Inches(3.3), Inches(0.16),
                desc, size=7, color=GREY_TEXT, italic=True)
-        _rect(sl, Inches(10.75), y + Inches(0.06), bar_max, Inches(0.26),
+        _rect(sl, bar_x, y + Inches(0.06), bar_max, Inches(0.26),
               fill=RGBColor(0xE2, 0xE8, 0xF0))
-        _rect(sl, Inches(10.75), y + Inches(0.06), bar_max * (w / 0.25), Inches(0.26),
+        _rect(sl, bar_x, y + Inches(0.06), bar_max * (w / 0.25), Inches(0.26),
               fill=PURPLE)
-        _txbox(sl, Inches(13.45), y + Inches(0.07), Inches(0.7), Inches(0.22),
+        _txbox(sl, Inches(12.78), y + Inches(0.07), Inches(0.45), Inches(0.22),
                f"{int(w*100)}%", size=9, bold=True, color=PURPLE, align=PP_ALIGN.RIGHT)
 
     # ── Bottom: per-module plugin / activation status table ───────────────────
